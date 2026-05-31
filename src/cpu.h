@@ -46,6 +46,7 @@ typedef struct CPUData_ {
    int temp;
    int cpu_mhz;
    float power;
+   float avg_mhz;  // 平均频率
 
    std::string label = "unknown";
 } CPUData;
@@ -176,6 +177,7 @@ public:
 
    bool UpdateCPUData();
    bool UpdateCoreMhz();
+   bool UpdateCoreMhzSimple();  // 添加声明
    bool UpdateCpuTemp();
    bool UpdateCpuPower();
    bool ReadcpuTempFile(int& temp);
@@ -198,7 +200,7 @@ private:
    CPUData m_cpuDataTotal {};
    std::vector<int> m_coreMhz;
    double m_cpuPeriod = 0;
-   bool m_updatedCPUs = false; // TODO use caching or just update?
+   bool m_updatedCPUs = false;
    bool m_inited = false;
    FILE *m_cpuTempFile = nullptr;
    std::unique_ptr<CPUPowerData> m_cpuPowerData;
