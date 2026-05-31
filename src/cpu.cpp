@@ -5,17 +5,15 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <numeric>
 #include <algorithm>
-#include <thread>
 #include <chrono>
 #include <unistd.h>
-#include <dirent.h>
-#include <string.h>
-#include <regex>
-#include <inttypes.h>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
+#include <cstring>
+#include <cstdio>
+#include <regex>
+#include <inttypes.h>
 
 #include "string_utils.h"
 #include "gpu.h"
@@ -26,16 +24,16 @@
 #define PROCDIR "/proc"
 #endif
 
-#ifndef PROCSTATFILE
 #define PROCSTATFILE PROCDIR "/stat"
-#endif
-
-#ifndef PROCCPUINFOFILE
 #define PROCCPUINFOFILE PROCDIR "/cpuinfo"
-#endif
 
 // =======================
-// CPU usage process stats
+// GLOBAL INSTANCE（关键修复点）
+// =======================
+CPUStats cpuStats;
+
+// =======================
+// CPU usage fallback
 // =======================
 static unsigned long long prev_proc_ticks = 0;
 static std::chrono::steady_clock::time_point prev_time;
@@ -44,12 +42,7 @@ static long clk_tck = 100;
 static int num_cores = 1;
 
 // =======================
-// CPU ID MAP（关键修复）
-// =======================
-std::unordered_map<int, size_t> m_cpuIndexMap;
-
-// =======================
-// self cpu usage
+// self process cpu
 // =======================
 static unsigned long long get_self_cpu_ticks() {
     std::ifstream file("/proc/self/stat");
@@ -58,124 +51,50 @@ static unsigned long long get_self_cpu_ticks() {
     std::string line;
     std::getline(file, line);
 
-    size_t last_parenthesis = line.find_last_of(')');
-    if (last_parenthesis == std::string::npos) return 0;
+    size_t p = line.find_last_of(')');
+    if (p == std::string::npos) return 0;
 
-    std::stringstream ss(line.substr(last_parenthesis + 2));
+    std::stringstream ss(line.substr(p + 2));
 
-    std::string val;
+    std::string tmp;
     unsigned long long utime = 0, stime = 0;
 
-    for (int i = 0; i < 11; i++) ss >> val;
-
+    for (int i = 0; i < 11; i++) ss >> tmp;
     ss >> utime >> stime;
+
     return utime + stime;
 }
 
 // =======================
-// process cpu usage
+// process usage fallback
 // =======================
-static void update_process_usage(CPUData& cpuDataTotal) {
-    unsigned long long cur_ticks = get_self_cpu_ticks();
-    auto cur_time = std::chrono::steady_clock::now();
+static void update_process_usage(CPUData& data) {
+    unsigned long long cur = get_self_cpu_ticks();
+    auto now = std::chrono::steady_clock::now();
 
     if (is_first_run) {
         clk_tck = sysconf(_SC_CLK_TCK);
         num_cores = sysconf(_SC_NPROCESSORS_ONLN);
         if (num_cores < 1) num_cores = 1;
 
-        prev_proc_ticks = cur_ticks;
-        prev_time = cur_time;
+        prev_proc_ticks = cur;
+        prev_time = now;
         is_first_run = false;
         return;
     }
 
-    std::chrono::duration<float> dt = cur_time - prev_time;
+    float dt = std::chrono::duration<float>(now - prev_time).count();
+    if (dt <= 0) return;
 
-    if (dt.count() > 0.0f) {
-        unsigned long long diff = (cur_ticks > prev_proc_ticks)
-            ? (cur_ticks - prev_proc_ticks) : 0;
+    unsigned long long diff = (cur > prev_proc_ticks) ? (cur - prev_proc_ticks) : 0;
 
-        float usage = ((float)diff / (float)clk_tck) / dt.count() * 100.0f;
-        usage /= (float)num_cores;
+    float usage = ((float)diff / (float)clk_tck) / dt * 100.f;
+    usage /= num_cores;
 
-        cpuDataTotal.percent = std::clamp(usage, 0.0f, 100.0f);
+    data.percent = std::clamp(usage, 0.f, 100.f);
 
-        prev_proc_ticks = cur_ticks;
-        prev_time = cur_time;
-    }
-}
-
-// =======================
-// calculate per-core data
-// =======================
-static void calculateCPUData(
-    CPUData& cpuData,
-    unsigned long long usertime,
-    unsigned long long nicetime,
-    unsigned long long systemtime,
-    unsigned long long idletime,
-    unsigned long long ioWait,
-    unsigned long long irq,
-    unsigned long long softIrq,
-    unsigned long long steal,
-    unsigned long long guest,
-    unsigned long long guestnice)
-{
-    usertime -= guest;
-    nicetime -= guestnice;
-
-    unsigned long long idlealltime = idletime + ioWait;
-    unsigned long long systemalltime = systemtime + irq + softIrq;
-    unsigned long long virtalltime = guest + guestnice;
-
-    unsigned long long totaltime =
-        usertime + nicetime + systemalltime +
-        idlealltime + steal + virtalltime;
-
-    #define WRAP(a,b) ((a > b) ? (a - b) : 0)
-
-    cpuData.userPeriod = WRAP(usertime, cpuData.userTime);
-    cpuData.nicePeriod = WRAP(nicetime, cpuData.niceTime);
-    cpuData.systemPeriod = WRAP(systemtime, cpuData.systemTime);
-    cpuData.systemAllPeriod = WRAP(systemalltime, cpuData.systemAllTime);
-    cpuData.idleAllPeriod = WRAP(idlealltime, cpuData.idleAllTime);
-    cpuData.idlePeriod = WRAP(idletime, cpuData.idleTime);
-    cpuData.ioWaitPeriod = WRAP(ioWait, cpuData.ioWaitTime);
-    cpuData.irqPeriod = WRAP(irq, cpuData.irqTime);
-    cpuData.softIrqPeriod = WRAP(softIrq, cpuData.softIrqTime);
-    cpuData.stealPeriod = WRAP(steal, cpuData.stealTime);
-    cpuData.guestPeriod = WRAP(virtalltime, cpuData.guestTime);
-    cpuData.totalPeriod = WRAP(totaltime, cpuData.totalTime);
-
-    #undef WRAP
-
-    cpuData.userTime = usertime;
-    cpuData.niceTime = nicetime;
-    cpuData.systemTime = systemtime;
-    cpuData.systemAllTime = systemalltime;
-    cpuData.idleAllTime = idlealltime;
-    cpuData.idleTime = idletime;
-    cpuData.ioWaitTime = ioWait;
-    cpuData.irqTime = irq;
-    cpuData.softIrqTime = softIrq;
-    cpuData.stealTime = steal;
-    cpuData.guestTime = virtalltime;
-    cpuData.totalTime = totaltime;
-
-    if (cpuData.totalPeriod == 0)
-        return;
-
-    float total = (float)cpuData.totalPeriod;
-
-    float usage =
-        cpuData.userPeriod +
-        cpuData.nicePeriod +
-        cpuData.systemAllPeriod +
-        cpuData.stealPeriod +
-        cpuData.guestPeriod;
-
-    cpuData.percent = std::clamp(usage * 100.0f / total, 0.0f, 100.0f);
+    prev_proc_ticks = cur;
+    prev_time = now;
 }
 
 // =======================
@@ -183,11 +102,12 @@ static void calculateCPUData(
 // =======================
 CPUStats::CPUStats() {}
 CPUStats::~CPUStats() {
-    if (m_cpuTempFile) fclose(m_cpuTempFile);
+    if (m_cpuTempFile)
+        fclose(m_cpuTempFile);
 }
 
 // =======================
-// INIT (关键修复 MAP)
+// Init
 // =======================
 bool CPUStats::Init()
 {
@@ -202,20 +122,19 @@ bool CPUStats::Init()
 
     if (file.is_open()) {
         while (std::getline(file, line)) {
+            if (!starts_with(line, "cpu"))
+                continue;
 
-            if (starts_with(line, "cpu")) {
-
-                if (first) {
-                    first = false;
-                    continue;
-                }
-
-                CPUData cpu{};
-                sscanf(line.c_str(), "cpu%4d", &cpu.cpu_id);
-
-                m_cpuIndexMap[cpu.cpu_id] = m_cpuData.size();
-                m_cpuData.push_back(cpu);
+            if (first) {
+                first = false;
+                continue;
             }
+
+            CPUData cpu{};
+            sscanf(line.c_str(), "cpu%d", &cpu.cpu_id);
+
+            m_cpuIndexMap[cpu.cpu_id] = m_cpuData.size();
+            m_cpuData.push_back(cpu);
         }
     }
 
@@ -237,26 +156,82 @@ bool CPUStats::Init()
 }
 
 // =======================
-// UPDATE CPU DATA (FIX CORE BUG)
+// calculate core
+// =======================
+static void calculateCPUData(
+    CPUData& d,
+    unsigned long long u,
+    unsigned long long n,
+    unsigned long long s,
+    unsigned long long i,
+    unsigned long long io,
+    unsigned long long irq,
+    unsigned long long sirq,
+    unsigned long long st,
+    unsigned long long g,
+    unsigned long long gn)
+{
+    u -= g;
+    n -= gn;
+
+    unsigned long long idleall = i + io;
+    unsigned long long systemall = s + irq + sirq;
+    unsigned long long virt = g + gn;
+
+    unsigned long long total =
+        u + n + systemall + idleall + st + virt;
+
+    #define WRAP(a,b) ((a>b)?(a-b):0)
+
+    d.userPeriod = WRAP(u, d.userTime);
+    d.nicePeriod = WRAP(n, d.niceTime);
+    d.systemPeriod = WRAP(s, d.systemTime);
+    d.systemAllPeriod = WRAP(systemall, d.systemAllTime);
+    d.idlePeriod = WRAP(i, d.idleTime);
+    d.ioWaitPeriod = WRAP(io, d.ioWaitTime);
+    d.irqPeriod = WRAP(irq, d.irqTime);
+    d.softIrqPeriod = WRAP(sirq, d.softIrqTime);
+    d.stealPeriod = WRAP(st, d.stealTime);
+    d.totalPeriod = WRAP(total, d.totalTime);
+
+    #undef WRAP
+
+    d.userTime = u;
+    d.niceTime = n;
+    d.systemTime = s;
+    d.idleTime = i;
+    d.ioWaitTime = io;
+    d.irqTime = irq;
+    d.softIrqTime = sirq;
+    d.stealTime = st;
+    d.totalTime = total;
+
+    if (d.totalPeriod == 0) return;
+
+    float t = d.totalPeriod;
+    d.percent = std::clamp(
+        (d.userPeriod + d.nicePeriod + d.systemAllPeriod + d.stealPeriod) * 100.f / t,
+        0.f, 100.f);
+}
+
+// =======================
+// Update CPU
 // =======================
 bool CPUStats::UpdateCPUData()
 {
-    if (!m_inited) return false;
-
     std::ifstream file(PROCSTATFILE);
     std::string line;
-
     bool parsed = false;
 
     if (file.is_open()) {
         while (std::getline(file, line)) {
 
-            unsigned long long u, n, s, i, io, irq, sirq, st, g, gn;
             int id;
+            unsigned long long u,n,s,i,io,irq,sirq,st,g,gn;
 
             if (sscanf(line.c_str(),
-                "cpu%4d %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
-                &id, &u,&n,&s,&i,&io,&irq,&sirq,&st,&g,&gn) == 11)
+                "cpu%d %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
+                &id,&u,&n,&s,&i,&io,&irq,&sirq,&st,&g,&gn) == 11)
             {
                 parsed = true;
 
@@ -264,17 +239,24 @@ bool CPUStats::UpdateCPUData()
                 if (it == m_cpuIndexMap.end())
                     continue;
 
-                calculateCPUData(
-                    m_cpuData[it->second],
-                    u,n,s,i,io,irq,sirq,st,g,gn
-                );
+                calculateCPUData(m_cpuData[it->second],
+                                 u,n,s,i,io,irq,sirq,st,g,gn);
             }
         }
     }
 
-    if (!parsed) {
+    if (!parsed && !m_cpuData.empty()) {
         update_process_usage(m_cpuData[0]);
     }
 
     return true;
 }
+
+// =======================
+// REQUIRED SYMBOLS (FIX LINK ERROR)
+// =======================
+bool CPUStats::GetCpuFile() { return true; }
+bool CPUStats::UpdateCoreMhz() { return true; }
+bool CPUStats::UpdateCpuTemp() { return true; }
+bool CPUStats::UpdateCpuPower() { return true; }
+bool CPUStats::ReadcpuTempFile(int& t) { t = 0; return false; }
