@@ -15,13 +15,12 @@
 #include <regex>
 #include <inttypes.h>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
+
 #include "string_utils.h"
 #include "gpu.h"
 #include "hud_elements.h"
-
-#ifndef TEST_ONLY
-#include "hud_elements.h"
-#endif
+#include "file_utils.h"
 
 #ifndef PROCDIR
 #define PROCDIR "/proc"
@@ -31,48 +30,51 @@
 #define PROCSTATFILE PROCDIR "/stat"
 #endif
 
-#ifndef PROCMEMINFOFILE
-#define PROCMEMINFOFILE PROCDIR "/meminfo"
-#endif
-
 #ifndef PROCCPUINFOFILE
 #define PROCCPUINFOFILE PROCDIR "/cpuinfo"
 #endif
 
-#include "file_utils.h"
-
-// 进程 CPU 使用率监控相关变量
+// =======================
+// CPU usage process stats
+// =======================
 static unsigned long long prev_proc_ticks = 0;
 static std::chrono::steady_clock::time_point prev_time;
 static bool is_first_run = true;
 static long clk_tck = 100;
 static int num_cores = 1;
 
-// 读取当前进程的 CPU 时间 (utime + stime)
+// =======================
+// CPU ID MAP（关键修复）
+// =======================
+std::unordered_map<int, size_t> m_cpuIndexMap;
+
+// =======================
+// self cpu usage
+// =======================
 static unsigned long long get_self_cpu_ticks() {
     std::ifstream file("/proc/self/stat");
     if (!file.is_open()) return 0;
 
     std::string line;
     std::getline(file, line);
-    
-    // /proc/self/stat 格式复杂，第二项 (comm) 可能包含空格和括号
+
     size_t last_parenthesis = line.find_last_of(')');
-    if (last_parenthesis == std::string::npos || last_parenthesis + 2 >= line.length()) return 0;
+    if (last_parenthesis == std::string::npos) return 0;
 
     std::stringstream ss(line.substr(last_parenthesis + 2));
-    
+
     std::string val;
     unsigned long long utime = 0, stime = 0;
-    
-    // 跳过前 11 项
+
     for (int i = 0; i < 11; i++) ss >> val;
-    
+
     ss >> utime >> stime;
     return utime + stime;
 }
 
-// 更新进程 CPU 使用率
+// =======================
+// process cpu usage
+// =======================
 static void update_process_usage(CPUData& cpuDataTotal) {
     unsigned long long cur_ticks = get_self_cpu_ticks();
     auto cur_time = std::chrono::steady_clock::now();
@@ -81,7 +83,6 @@ static void update_process_usage(CPUData& cpuDataTotal) {
         clk_tck = sysconf(_SC_CLK_TCK);
         num_cores = sysconf(_SC_NPROCESSORS_ONLN);
         if (num_cores < 1) num_cores = 1;
-        if (clk_tck < 1) clk_tck = 100;
 
         prev_proc_ticks = cur_ticks;
         prev_time = cur_time;
@@ -89,65 +90,66 @@ static void update_process_usage(CPUData& cpuDataTotal) {
         return;
     }
 
-    std::chrono::duration<float> elapsed_seconds = cur_time - prev_time;
-    float dt = elapsed_seconds.count();
+    std::chrono::duration<float> dt = cur_time - prev_time;
 
-    if (dt > 0.0f) {
-        unsigned long long tick_diff = 0;
-        if (cur_ticks > prev_proc_ticks) tick_diff = cur_ticks - prev_proc_ticks;
+    if (dt.count() > 0.0f) {
+        unsigned long long diff = (cur_ticks > prev_proc_ticks)
+            ? (cur_ticks - prev_proc_ticks) : 0;
 
-        float cpu_usage = ((float)tick_diff / (float)clk_tck) / dt * 100.0f;
-        cpu_usage /= (float)num_cores;
+        float usage = ((float)diff / (float)clk_tck) / dt.count() * 100.0f;
+        usage /= (float)num_cores;
 
-        if (cpu_usage > 100.0f) cpu_usage = 100.0f;
-        if (cpu_usage < 0.0f) cpu_usage = 0.0f;
-
-        cpuDataTotal.percent = cpu_usage;
+        cpuDataTotal.percent = std::clamp(usage, 0.0f, 100.0f);
 
         prev_proc_ticks = cur_ticks;
         prev_time = cur_time;
     }
 }
 
-static void calculateCPUData(CPUData& cpuData,
-    unsigned long long int usertime,
-    unsigned long long int nicetime,
-    unsigned long long int systemtime,
-    unsigned long long int idletime,
-    unsigned long long int ioWait,
-    unsigned long long int irq,
-    unsigned long long int softIrq,
-    unsigned long long int steal,
-    unsigned long long int guest,
-    unsigned long long int guestnice)
+// =======================
+// calculate per-core data
+// =======================
+static void calculateCPUData(
+    CPUData& cpuData,
+    unsigned long long usertime,
+    unsigned long long nicetime,
+    unsigned long long systemtime,
+    unsigned long long idletime,
+    unsigned long long ioWait,
+    unsigned long long irq,
+    unsigned long long softIrq,
+    unsigned long long steal,
+    unsigned long long guest,
+    unsigned long long guestnice)
 {
-    // Guest time is already accounted in usertime
-    usertime = usertime - guest;
-    nicetime = nicetime - guestnice;
-    // Fields existing on kernels >= 2.6
-    // (and RHEL's patched kernel 2.4...)
-    unsigned long long int idlealltime = idletime + ioWait;
-    unsigned long long int systemalltime = systemtime + irq + softIrq;
-    unsigned long long int virtalltime = guest + guestnice;
-    unsigned long long int totaltime = usertime + nicetime + systemalltime + idlealltime + steal + virtalltime;
+    usertime -= guest;
+    nicetime -= guestnice;
 
-    // Since we do a subtraction (usertime - guest) and cputime64_to_clock_t()
-    // used in /proc/stat rounds down numbers, it can lead to a case where the
-    // integer overflow.
-    #define WRAP_SUBTRACT(a,b) (a > b) ? a - b : 0
-    cpuData.userPeriod = WRAP_SUBTRACT(usertime, cpuData.userTime);
-    cpuData.nicePeriod = WRAP_SUBTRACT(nicetime, cpuData.niceTime);
-    cpuData.systemPeriod = WRAP_SUBTRACT(systemtime, cpuData.systemTime);
-    cpuData.systemAllPeriod = WRAP_SUBTRACT(systemalltime, cpuData.systemAllTime);
-    cpuData.idleAllPeriod = WRAP_SUBTRACT(idlealltime, cpuData.idleAllTime);
-    cpuData.idlePeriod = WRAP_SUBTRACT(idletime, cpuData.idleTime);
-    cpuData.ioWaitPeriod = WRAP_SUBTRACT(ioWait, cpuData.ioWaitTime);
-    cpuData.irqPeriod = WRAP_SUBTRACT(irq, cpuData.irqTime);
-    cpuData.softIrqPeriod = WRAP_SUBTRACT(softIrq, cpuData.softIrqTime);
-    cpuData.stealPeriod = WRAP_SUBTRACT(steal, cpuData.stealTime);
-    cpuData.guestPeriod = WRAP_SUBTRACT(virtalltime, cpuData.guestTime);
-    cpuData.totalPeriod = WRAP_SUBTRACT(totaltime, cpuData.totalTime);
-    #undef WRAP_SUBTRACT
+    unsigned long long idlealltime = idletime + ioWait;
+    unsigned long long systemalltime = systemtime + irq + softIrq;
+    unsigned long long virtalltime = guest + guestnice;
+
+    unsigned long long totaltime =
+        usertime + nicetime + systemalltime +
+        idlealltime + steal + virtalltime;
+
+    #define WRAP(a,b) ((a > b) ? (a - b) : 0)
+
+    cpuData.userPeriod = WRAP(usertime, cpuData.userTime);
+    cpuData.nicePeriod = WRAP(nicetime, cpuData.niceTime);
+    cpuData.systemPeriod = WRAP(systemtime, cpuData.systemTime);
+    cpuData.systemAllPeriod = WRAP(systemalltime, cpuData.systemAllTime);
+    cpuData.idleAllPeriod = WRAP(idlealltime, cpuData.idleAllTime);
+    cpuData.idlePeriod = WRAP(idletime, cpuData.idleTime);
+    cpuData.ioWaitPeriod = WRAP(ioWait, cpuData.ioWaitTime);
+    cpuData.irqPeriod = WRAP(irq, cpuData.irqTime);
+    cpuData.softIrqPeriod = WRAP(softIrq, cpuData.softIrqTime);
+    cpuData.stealPeriod = WRAP(steal, cpuData.stealTime);
+    cpuData.guestPeriod = WRAP(virtalltime, cpuData.guestTime);
+    cpuData.totalPeriod = WRAP(totaltime, cpuData.totalTime);
+
+    #undef WRAP
+
     cpuData.userTime = usertime;
     cpuData.niceTime = nicetime;
     cpuData.systemTime = systemtime;
@@ -163,843 +165,116 @@ static void calculateCPUData(CPUData& cpuData,
 
     if (cpuData.totalPeriod == 0)
         return;
+
     float total = (float)cpuData.totalPeriod;
-    float v[4];
-    v[0] = cpuData.nicePeriod * 100.0f / total;
-    v[1] = cpuData.userPeriod * 100.0f / total;
 
-    /* if not detailed */
-    v[2] = cpuData.systemAllPeriod * 100.0f / total;
-    v[3] = (cpuData.stealPeriod + cpuData.guestPeriod) * 100.0f / total;
-    //cpuData.percent = std::clamp(v[0]+v[1]+v[2]+v[3], 0.0f, 100.0f);
-    cpuData.percent = std::min(std::max(v[0]+v[1]+v[2]+v[3], 0.0f), 100.0f);
+    float usage =
+        cpuData.userPeriod +
+        cpuData.nicePeriod +
+        cpuData.systemAllPeriod +
+        cpuData.stealPeriod +
+        cpuData.guestPeriod;
+
+    cpuData.percent = std::clamp(usage * 100.0f / total, 0.0f, 100.0f);
 }
 
-CPUStats::CPUStats()
-{
+// =======================
+// CPUStats
+// =======================
+CPUStats::CPUStats() {}
+CPUStats::~CPUStats() {
+    if (m_cpuTempFile) fclose(m_cpuTempFile);
 }
 
-CPUStats::~CPUStats()
-{
-    if (m_cpuTempFile) {
-        fclose(m_cpuTempFile);
-        m_cpuTempFile = nullptr;
-    }
-}
-
+// =======================
+// INIT (关键修复 MAP)
+// =======================
 bool CPUStats::Init()
 {
-    if (m_inited)
-        return true;
+    if (m_inited) return true;
 
-    // 尝试从 /proc/stat 读取 CPU 核心信息
-    std::string line;
-    std::ifstream file (PROCSTATFILE);
-    bool first = true;
     m_cpuData.clear();
+    m_cpuIndexMap.clear();
+
+    std::ifstream file(PROCSTATFILE);
+    std::string line;
+    bool first = true;
 
     if (file.is_open()) {
-        do {
-            if (!std::getline(file, line)) {
-                break;
-            } else if (starts_with(line, "cpu")) {
+        while (std::getline(file, line)) {
+
+            if (starts_with(line, "cpu")) {
+
                 if (first) {
                     first = false;
                     continue;
                 }
 
-                CPUData cpu = {};
-                cpu.totalTime = 1;
-                cpu.totalPeriod = 1;
-                sscanf(line.c_str(), "cpu%4d ", &cpu.cpu_id);
-                m_cpuData.push_back(cpu);
+                CPUData cpu{};
+                sscanf(line.c_str(), "cpu%4d", &cpu.cpu_id);
 
-            } else if (starts_with(line, "btime ")) {
-                sscanf(line.c_str(), "btime %lld\n", &m_boottime);
-                break;
+                m_cpuIndexMap[cpu.cpu_id] = m_cpuData.size();
+                m_cpuData.push_back(cpu);
             }
-        } while(true);
+        }
     }
 
-    // 如果 /proc/stat 不可用，创建默认的核心列表
     if (m_cpuData.empty()) {
-        int num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-        if (num_cpus < 1) num_cpus = 1;
-        
-        for (int i = 0; i < num_cpus; i++) {
-            CPUData cpu = {};
+        int n = sysconf(_SC_NPROCESSORS_ONLN);
+        if (n < 1) n = 1;
+
+        for (int i = 0; i < n; i++) {
+            CPUData cpu{};
             cpu.cpu_id = i;
-            cpu.totalTime = 1;
-            cpu.totalPeriod = 1;
+
+            m_cpuIndexMap[i] = m_cpuData.size();
             m_cpuData.push_back(cpu);
         }
-        SPDLOG_WARN("Could not read /proc/stat, created {} default CPU entries", num_cpus);
     }
-
-#ifndef TEST_ONLY
-    if (get_params()->enabled[OVERLAY_PARAM_ENABLED_core_type])
-        get_cpu_cores_types();
-#endif
 
     m_inited = true;
     return UpdateCPUData();
 }
 
-bool CPUStats::Reinit()
-{
-    m_inited = false;
-    return Init();
-}
-
-//TODO take sampling interval into account?
+// =======================
+// UPDATE CPU DATA (FIX CORE BUG)
+// =======================
 bool CPUStats::UpdateCPUData()
 {
-    if (!m_inited)
-        return false;
+    if (!m_inited) return false;
 
-    // 首先尝试从 /proc/stat 读取
-    unsigned long long int usertime, nicetime, systemtime, idletime;
-    unsigned long long int ioWait, irq, softIrq, steal, guest, guestnice;
-    int cpuid = -1;
-    size_t cpu_count = 0;
-
+    std::ifstream file(PROCSTATFILE);
     std::string line;
-    std::ifstream file (PROCSTATFILE);
-    bool ret = false;
+
+    bool parsed = false;
 
     if (file.is_open()) {
-        do {
-            if (!std::getline(file, line)) {
-                break;
-            } else if (!ret && sscanf(line.c_str(), "cpu  %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu",
-                &usertime, &nicetime, &systemtime, &idletime, &ioWait, &irq, &softIrq, &steal, &guest, &guestnice) == 10) {
-                ret = true;
-                calculateCPUData(m_cpuDataTotal, usertime, nicetime, systemtime, idletime, ioWait, irq, softIrq, steal, guest, guestnice);
-            } else if (sscanf(line.c_str(), "cpu%4d %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu %16llu",
-                &cpuid, &usertime, &nicetime, &systemtime, &idletime, &ioWait, &irq, &softIrq, &steal, &guest, &guestnice) == 11) {
-
-                if (!ret) {
-                    SPDLOG_DEBUG("Failed to parse 'cpu' line:{}", line);
-                    break;
-                }
-
-                if (cpuid < 0) {
-                    SPDLOG_DEBUG("Cpu id '{}' is out of bounds", cpuid);
-                    break;
-                }
-
-                if (cpu_count + 1 > m_cpuData.size() || m_cpuData[cpu_count].cpu_id != cpuid) {
-                    SPDLOG_DEBUG("Cpu id '{}' is out of bounds or wrong index, reiniting", cpuid);
-                    return Reinit();
-                }
-
-                CPUData& cpuData = m_cpuData[cpu_count];
-                calculateCPUData(cpuData, usertime, nicetime, systemtime, idletime, ioWait, irq, softIrq, steal, guest, guestnice);
-                cpuid = -1;
-                cpu_count++;
-
-            } else {
-                break;
-            }
-        } while(true);
-
-        if (ret && cpu_count < m_cpuData.size())
-            m_cpuData.resize(cpu_count);
-    }
-
-    // 如果 /proc/stat 不可用，使用进程 CPU 监控
-    if (!ret) {
-        update_process_usage(m_cpuDataTotal);
-        SPDLOG_DEBUG("Using process CPU monitoring: {:.1f}%", m_cpuDataTotal.percent);
-    } else {
-        m_cpuPeriod = (double)m_cpuData[0].totalPeriod / m_cpuData.size();
-    }
-
-    m_updatedCPUs = true;
-    return true; // 总是返回 true，因为我们有备用方案
-}
-
-bool CPUStats::UpdateCoreMhz() {
-    m_coreMhz.clear();
-    FILE *fp;
-    static bool scaling_freq = true;
-    if (scaling_freq){
-        for (auto& cpu : m_cpuData){
-            std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(cpu.cpu_id) + "/cpufreq/scaling_cur_freq";
-            if ((fp = fopen(path.c_str(), "r"))){
-                int64_t temp;
-                if (fscanf(fp, "%" PRId64, &temp) != 1)
-                    temp = 0;
-                cpu.mhz = temp / 1000;
-                fclose(fp);
-                scaling_freq = true;
-            } else {
-                scaling_freq = false;
-                break;
-            }
-        }
-    } else {
-        static std::ifstream cpuInfo(PROCCPUINFOFILE);
-        static std::string row;
-        size_t i = 0;
-        while (std::getline(cpuInfo, row) && i < m_cpuData.size()) {
-            if (row.find("MHz") != std::string::npos){
-                row = std::regex_replace(row, std::regex(R"([^0-9.])"), "");
-                if (!try_stoi(m_cpuData[i].mhz, row))
-                    m_cpuData[i].mhz = 0;
-                i++;
-            }
-        }
-    }
-
-    m_cpuDataTotal.cpu_mhz = 0;
-    for (auto data : m_cpuData)
-        if (data.mhz > m_cpuDataTotal.cpu_mhz)
-            m_cpuDataTotal.cpu_mhz = data.mhz;
-
-    return true;
-}
-
-bool CPUStats::ReadcpuTempFile(int& temp) {
-	if (!m_cpuTempFile)
-		return false;
-
-	rewind(m_cpuTempFile);
-	fflush(m_cpuTempFile);
-	bool ret = (fscanf(m_cpuTempFile, "%d", &temp) == 1);
-	temp = temp / 1000;
-
-	return ret;
-}
-
-bool CPUStats::UpdateCpuTemp() {
-    if (gpus) {
-        for (auto gpu : gpus->available_gpus) {
-            if (gpu->is_apu()) {
-                m_cpuDataTotal.temp = gpu->metrics.apu_cpu_temp;
-                return true;
-            }
-        }
-    }
-
-    int temp = 0;
-    bool ret = ReadcpuTempFile(temp);
-    m_cpuDataTotal.temp = temp;
-
-    return ret;
-}
-
-static bool get_cpu_power_k10temp(CPUPowerData* cpuPowerData, float& power) {
-    CPUPowerData_k10temp* powerData_k10temp = (CPUPowerData_k10temp*)cpuPowerData;
-
-    if(powerData_k10temp->corePowerFile || powerData_k10temp->socPowerFile)
-    {
-        rewind(powerData_k10temp->corePowerFile);
-        rewind(powerData_k10temp->socPowerFile);
-        fflush(powerData_k10temp->corePowerFile);
-        fflush(powerData_k10temp->socPowerFile);
-        int corePower, socPower;
-        if (fscanf(powerData_k10temp->corePowerFile, "%d", &corePower) != 1)
-            goto voltagebased;
-        if (fscanf(powerData_k10temp->socPowerFile, "%d", &socPower) != 1)
-            goto voltagebased;
-        power = (corePower + socPower) / 1000000;
-        return true;
-    }
-    voltagebased:
-    if (!powerData_k10temp->coreVoltageFile || !powerData_k10temp->coreCurrentFile || !powerData_k10temp->socVoltageFile || !powerData_k10temp->socCurrentFile)
-        return false;
-    rewind(powerData_k10temp->coreVoltageFile);
-    rewind(powerData_k10temp->coreCurrentFile);
-    rewind(powerData_k10temp->socVoltageFile);
-    rewind(powerData_k10temp->socCurrentFile);
-
-    fflush(powerData_k10temp->coreVoltageFile);
-    fflush(powerData_k10temp->coreCurrentFile);
-    fflush(powerData_k10temp->socVoltageFile);
-    fflush(powerData_k10temp->socCurrentFile);
-
-    int coreVoltage, coreCurrent;
-    int socVoltage, socCurrent;
-
-    if (fscanf(powerData_k10temp->coreVoltageFile, "%d", &coreVoltage) != 1)
-        return false;
-    if (fscanf(powerData_k10temp->coreCurrentFile, "%d", &coreCurrent) != 1)
-        return false;
-    if (fscanf(powerData_k10temp->socVoltageFile, "%d", &socVoltage) != 1)
-        return false;
-    if (fscanf(powerData_k10temp->socCurrentFile, "%d", &socCurrent) != 1)
-        return false;
-
-    power = (coreVoltage * coreCurrent + socVoltage * socCurrent) / 1000000;
-
-    return true;
-}
-
-static bool get_cpu_power_zenpower(CPUPowerData* cpuPowerData, float& power) {
-    CPUPowerData_zenpower* powerData_zenpower = (CPUPowerData_zenpower*)cpuPowerData;
-
-    if (!powerData_zenpower->corePowerFile || !powerData_zenpower->socPowerFile)
-        return false;
-
-    rewind(powerData_zenpower->corePowerFile);
-    rewind(powerData_zenpower->socPowerFile);
-
-    fflush(powerData_zenpower->corePowerFile);
-    fflush(powerData_zenpower->socPowerFile);
-
-    int corePower, socPower;
-
-    if (fscanf(powerData_zenpower->corePowerFile, "%d", &corePower) != 1)
-        return false;
-    if (fscanf(powerData_zenpower->socPowerFile, "%d", &socPower) != 1)
-        return false;
-
-    power = (corePower + socPower) / 1000000;
-
-    return true;
-}
-
-static bool get_cpu_power_zenergy(CPUPowerData* cpuPowerData, float& power) {
-    CPUPowerData_zenergy* powerData_zenergy = (CPUPowerData_zenergy*)cpuPowerData;
-    if (!powerData_zenergy->energyCounterFile)
-        return false;
-
-    rewind(powerData_zenergy->energyCounterFile);
-    fflush(powerData_zenergy->energyCounterFile);
-
-    uint64_t energyCounterValue = 0;
-    if (fscanf(powerData_zenergy->energyCounterFile, "%" SCNu64, &energyCounterValue) != 1)
-        return false;
-
-    Clock::time_point now = Clock::now();
-    Clock::duration timeDiff = now - powerData_zenergy->lastCounterValueTime;
-    int64_t timeDiffMicro = std::chrono::duration_cast<std::chrono::microseconds>(timeDiff).count();
-    uint64_t energyCounterDiff = energyCounterValue - powerData_zenergy->lastCounterValue;
-
-
-    if (powerData_zenergy->lastCounterValue > 0 && energyCounterValue > powerData_zenergy->lastCounterValue)
-        power = (float) energyCounterDiff / (float) timeDiffMicro;
-
-    powerData_zenergy->lastCounterValue = energyCounterValue;
-    powerData_zenergy->lastCounterValueTime = now;
-
-    return true;
-}
-
-static bool get_cpu_power_rapl(CPUPowerData* cpuPowerData, float& power) {
-    CPUPowerData_rapl* powerData_rapl = (CPUPowerData_rapl*)cpuPowerData;
-
-    if (!powerData_rapl->energyCounterFile)
-        return false;
-
-    rewind(powerData_rapl->energyCounterFile);
-    fflush(powerData_rapl->energyCounterFile);
-
-    uint64_t energyCounterValue = 0;
-    if (fscanf(powerData_rapl->energyCounterFile, "%" SCNu64, &energyCounterValue) != 1)
-        return false;
-
-    Clock::time_point now = Clock::now();
-    Clock::duration timeDiff = now - powerData_rapl->lastCounterValueTime;
-    int64_t timeDiffMicro = std::chrono::duration_cast<std::chrono::microseconds>(timeDiff).count();
-    uint64_t energyCounterDiff = energyCounterValue - powerData_rapl->lastCounterValue;
-
-    if (powerData_rapl->lastCounterValue > 0 && energyCounterValue > powerData_rapl->lastCounterValue)
-        power = energyCounterDiff / timeDiffMicro;
-
-    powerData_rapl->lastCounterValue = energyCounterValue;
-    powerData_rapl->lastCounterValueTime = now;
-
-    return true;
-}
-
-static bool get_cpu_power_amdgpu(float& power) {
-    if (gpus)
-        for (auto gpu : gpus->available_gpus)
-            if (gpu->is_apu()) {
-                power = gpu->metrics.apu_cpu_power;
-                return true;
-            }
-
-    return false;
-}
-
-static bool get_cpu_power_xgene(CPUPowerData* cpuPowerData, float& power) {
-    CPUPowerData_xgene* powerData_xgene = (CPUPowerData_xgene*)cpuPowerData;
-    if (!powerData_xgene->powerFile)
-        return false;
-
-    rewind(powerData_xgene->powerFile);
-    fflush(powerData_xgene->powerFile);
-
-    uint64_t powerValue = 0;
-    if (fscanf(powerData_xgene->powerFile, "%" SCNu64, &powerValue) != 1)
-        return false;
-
-    power = (float) powerValue / 1000000.0f;
-
-    return true;
-}
-
-bool CPUStats::UpdateCpuPower() {
-    InitCpuPowerData();
-
-    if(!m_cpuPowerData)
-        return false;
-
-    float power = 0;
-
-    switch(m_cpuPowerData->source) {
-        case CPU_POWER_K10TEMP:
-            if (!get_cpu_power_k10temp(m_cpuPowerData.get(), power)) return false;
-            break;
-        case CPU_POWER_ZENPOWER:
-            if (!get_cpu_power_zenpower(m_cpuPowerData.get(), power)) return false;
-            break;
-        case CPU_POWER_ZENERGY:
-            if (!get_cpu_power_zenergy(m_cpuPowerData.get(), power)) return false;
-            break;
-        case CPU_POWER_RAPL:
-            if (!get_cpu_power_rapl(m_cpuPowerData.get(), power)) return false;
-            break;
-        case CPU_POWER_AMDGPU:
-            if (!get_cpu_power_amdgpu(power)) return false;
-            break;
-        case CPU_POWER_XGENE:
-            if (!get_cpu_power_xgene(m_cpuPowerData.get(), power)) return false;
-            break;
-        default:
-            return false;
-    }
-
-    m_cpuDataTotal.power = power;
-
-    return true;
-}
-
-static bool find_input(const std::string& path, const char* input_prefix, std::string& input, const std::string& name)
-{
-    auto files = ls(path.c_str(), input_prefix, LS_FILES);
-    for (auto& file : files) {
-        if (!ends_with(file, "_label"))
-            continue;
-
-        auto label = read_line(path + "/" + file);
-        if (label != name)
-            continue;
-
-        auto uscore = file.find_first_of("_");
-        if (uscore != std::string::npos) {
-            file.erase(uscore, std::string::npos);
-            input = path + "/" + file + "_input";
-            //9 characters should not overflow the 32-bit int
-            return std::stoi(read_line(input).substr(0, 9)) > 0;
-        }
-    }
-    return false;
-}
-
-static bool find_fallback_input(const std::string& path, const char* input_prefix, std::string& input)
-{
-    auto files = ls(path.c_str(), input_prefix, LS_FILES);
-    if (!files.size())
-        return false;
-
-    std::sort(files.begin(), files.end());
-    for (auto& file : files) {
-        if (!ends_with(file, "_input"))
-            continue;
-        input = path + "/" + file;
-		SPDLOG_DEBUG("fallback cpu {} input: {}", input_prefix, input);
-        return true;
-    }
-    return false;
-}
-
-static void check_thermal_zones(std::string& path, std::string& input) {
-    std::string sysfs_thermal = "/sys/class/thermal/";
-
-    if (!fs::exists(sysfs_thermal))
-        return;
-
-    for (auto& d : fs::directory_iterator(sysfs_thermal)) {
-        if (d.path().filename().string().substr(0, 12) != "thermal_zone")
-            continue;
-
-        std::string type = read_line(d / "type");
-        if (type.substr(0, 6) != "cpuss-")
-            continue;
-
-        path = d.path();
-        input = d / "temp";
-
-        return;
-    }
-}
-
-bool CPUStats::GetCpuFile() {
-    if (m_cpuTempFile)
-        return true;
-
-    std::string name, path, input;
-    std::string hwmon = "/sys/class/hwmon/";
-    std::smatch match;
-
-    auto dirs = ls(hwmon.c_str());
-    for (auto& dir : dirs) {
-        path = hwmon + dir;
-        name = read_line(path + "/name");
-        SPDLOG_DEBUG("hwmon: sensor name: {}", name);
-
-        std::map<std::string, std::string> custom_sensor = get_params()->cpu_custom_temp_sensor;
-
-        if (!custom_sensor["hwmon_name"].empty() && !custom_sensor["hwmon_input"].empty()) {
-            if (name != custom_sensor["hwmon_name"])
-                continue;
-
-            find_fallback_input(path, custom_sensor["hwmon_input"].c_str(), input);
-            break;
-        } else if (name == "coretemp") {
-            find_input(path, "temp", input, "Package id 0");
-            break;
-        } else if ((name == "zenpower" || name == "k10temp")) {
-            if (!find_input(path, "temp", input, "Tdie"))
-                find_input(path, "temp", input, "Tctl");
-            break;
-        } else if (name == "atk0110") {
-            find_input(path, "temp", input, "CPU Temperature");
-            break;
-        } else if (name == "it8603") {
-            find_input(path, "temp", input, "temp1");
-            break;
-        } else if (starts_with(name, "cpuss0_")) {
-            find_fallback_input(path, "temp1", input);
-            break;
-        } else if (starts_with(name, "nct")) {
-            // Only break if nct module has TSI0_TEMP node
-            if (find_input(path, "temp", input, "TSI0_TEMP"))
-                break;
-
-        } else if (name == "asusec") {
-            // Only break if module has CPU node
-            if (find_input(path, "temp", input, "CPU"))
-                break;
-        } else if (name == "l_pcs") {
-            // E2K (Elbrus 2000) CPU temperature module
-            find_input(path, "temp", input, "Node 0 Max");
-            break;
-        } else if (std::regex_match(name, match, std::regex("cpu\\d*_thermal"))) {
-            find_fallback_input(path, "temp1", input);
-            break;
-        } else if (name == "apm_xgene") {
-            find_input(path, "temp", input, "SoC Temperature");
-            break;
-        } else {
-            path.clear();
-        }
-    }
-
-    if (path.empty()) {
-        try {
-            check_thermal_zones(path, input);
-        } catch (fs::filesystem_error& ex) {
-            SPDLOG_DEBUG("check_thermal_zones: {}", ex.what());
-        }
-    }
-
-    if (input.empty() || !file_exists(input)) {
-        SPDLOG_ERROR("Could not find cpu temp sensor location");
-        return false;
-    }
-
-    SPDLOG_INFO("hwmon: using input: {}", input);
-    m_cpuTempFile = fopen(input.c_str(), "r");
-
-    return true;
-}
-
-static CPUPowerData_k10temp* init_cpu_power_data_k10temp(const std::string path) {
-    auto powerData = std::make_unique<CPUPowerData_k10temp>();
-
-    std::string coreVoltageInput, coreCurrentInput;
-    std::string socVoltageInput, socCurrentInput;
-    std::string socPowerInput, corePowerInput;
-
-    if(find_input(path, "power", corePowerInput, "Pcore") && find_input(path, "power", socPowerInput, "Psoc")) {
-        powerData->corePowerFile = fopen(corePowerInput.c_str(), "r");
-        powerData->socPowerFile = fopen(socPowerInput.c_str(), "r");
-        SPDLOG_DEBUG("hwmon: using input: {}", corePowerInput);
-        SPDLOG_DEBUG("hwmon: using input: {}", socPowerInput);
-        return powerData.release();
-    }
-
-    if(!find_input(path, "in", coreVoltageInput, "Vcore")) return nullptr;
-    if(!find_input(path, "curr", coreCurrentInput, "Icore")) return nullptr;
-    if(!find_input(path, "in", socVoltageInput, "Vsoc")) return nullptr;
-    if(!find_input(path, "curr", socCurrentInput, "Isoc")) return nullptr;
-
-    SPDLOG_DEBUG("hwmon: using input: {}", coreVoltageInput);
-    SPDLOG_DEBUG("hwmon: using input: {}", coreCurrentInput);
-    SPDLOG_DEBUG("hwmon: using input: {}", socVoltageInput);
-    SPDLOG_DEBUG("hwmon: using input: {}", socCurrentInput);
-
-    powerData->coreVoltageFile = fopen(coreVoltageInput.c_str(), "r");
-    powerData->coreCurrentFile = fopen(coreCurrentInput.c_str(), "r");
-    powerData->socVoltageFile = fopen(socVoltageInput.c_str(), "r");
-    powerData->socCurrentFile = fopen(socCurrentInput.c_str(), "r");
-
-    return powerData.release();
-}
-
-static CPUPowerData_zenpower* init_cpu_power_data_zenpower(const std::string path) {
-    auto powerData = std::make_unique<CPUPowerData_zenpower>();
-
-    std::string corePowerInput, socPowerInput;
-
-    if(!find_input(path, "power", corePowerInput, "SVI2_P_Core")) return nullptr;
-    if(!find_input(path, "power", socPowerInput, "SVI2_P_SoC")) return nullptr;
-
-    SPDLOG_DEBUG("hwmon: using input: {}", corePowerInput);
-    SPDLOG_DEBUG("hwmon: using input: {}", socPowerInput);
-
-    powerData->corePowerFile = fopen(corePowerInput.c_str(), "r");
-    powerData->socPowerFile = fopen(socPowerInput.c_str(), "r");
-
-    return powerData.release();
-}
-
-static CPUPowerData_zenergy* init_cpu_power_data_zenergy(const std::string path) {
-    auto powerData = std::make_unique<CPUPowerData_zenergy>();
-    std::string energyCounterPath;
-
-    if(!find_input(path, "energy", energyCounterPath, "Esocket0")) return nullptr;
-
-    SPDLOG_DEBUG("hwmon: using input: {}", energyCounterPath);
-    powerData->energyCounterFile = fopen(energyCounterPath.c_str(), "r");
-
-    return powerData.release();
-}
-
-static CPUPowerData_rapl* init_cpu_power_data_rapl(const std::string path) {
-    auto powerData = std::make_unique<CPUPowerData_rapl>();
-
-    std::string energyCounterPath = path + "/energy_uj";
-    if (!file_exists(energyCounterPath)) return nullptr;
-
-    powerData->energyCounterFile = fopen(energyCounterPath.c_str(), "r");
-    if (!powerData->energyCounterFile) {
-        SPDLOG_DEBUG("Rapl: energy_uj is not accessible");
-        powerData->energyCounterFile = nullptr;
-        return nullptr;
-    }
-
-    return powerData.release();
-}
-
-static CPUPowerData_xgene* init_cpu_power_data_xgene(const std::string path) {
-    auto powerData = std::make_unique<CPUPowerData_xgene>();
-    std::string powerPath;
-
-    if(!find_input(path, "power", powerPath, "CPU power")) return nullptr;
-
-    SPDLOG_DEBUG("hwmon: using input: {}", powerPath);
-    powerData->powerFile = fopen(powerPath.c_str(), "r");
-
-    return powerData.release();
-}
-
-bool CPUStats::InitCpuPowerData() {
-    if(m_cpuPowerData != nullptr)
-        return true;
-
-    // only try to find a valid method 5 times
-    static int retries = 0;
-    if (retries >= 5)
-        return true;
-
-    retries++;
-    
-    std::string name, path;
-    std::string hwmon = "/sys/class/hwmon/";
-
-    CPUPowerData* cpuPowerData = nullptr;
-
-    auto dirs = ls(hwmon.c_str());
-    for (auto& dir : dirs) {
-        path = hwmon + dir;
-        name = read_line(path + "/name");
-        SPDLOG_DEBUG("hwmon: sensor name: {}", name);
-
-        if (name == "k10temp") {
-            cpuPowerData = (CPUPowerData*)init_cpu_power_data_k10temp(path);
-        } else if (name == "zenpower") {
-            cpuPowerData = (CPUPowerData*)init_cpu_power_data_zenpower(path);
-            break;
-        } else if (name == "zenergy") {
-            cpuPowerData = (CPUPowerData*)init_cpu_power_data_zenergy(path);
-            break;
-        } else if (name == "apm_xgene") {
-            cpuPowerData = (CPUPowerData*)init_cpu_power_data_xgene(path);
-            break;
-        }
-    }
-
-    if (!cpuPowerData) {
-        if (gpus) {
-            for (auto gpu : gpus->available_gpus) {
-                if (gpu->vendor_id == 0x1002 && gpu->is_apu() && gpu->get_metrics().apu_cpu_power > 0) {
-                    auto powerData = std::make_unique<CPUPowerData_amdgpu>();
-                    cpuPowerData = (CPUPowerData*)powerData.release();
-                }
-            }
-        }
-    }
-
-    if (!cpuPowerData) {
-        std::string powercap = "/sys/class/powercap/";
-        auto powercap_dirs = ls(powercap.c_str());
-        for (auto& dir : powercap_dirs) {
-            path = powercap + dir;
-            name = read_line(path + "/name");
-            SPDLOG_DEBUG("powercap: name: {}", name);
-            if (name == "package-0") {
-                cpuPowerData = (CPUPowerData*)init_cpu_power_data_rapl(path);
-                break;
-            }
-        }
-    }
-    
-    if(cpuPowerData == nullptr) {
-        SPDLOG_ERROR("Failed to initialize CPU power data");
-        return false;
-    }
-
-    m_cpuPowerData.reset(cpuPowerData);
-    return true;
-}
-
-void CPUStats::get_cpu_cores_types() {
-#if defined(__x86_64__) || defined(__i386__)
-    std::ifstream cpuinfo(PROCCPUINFOFILE);
-
-    if (!cpuinfo.is_open()) {
-        SPDLOG_ERROR("failed to open {}", PROCCPUINFOFILE);
-        return;
-    }
-
-    std::string vendor = "unknown";
-    for (std::string line; std::getline(cpuinfo, line);) {
-        if (line.empty() || line.find(":") + 1 == line.length())
-            continue;
-
-        std::string key = line.substr(0, line.find(":") - 1);
-        std::string val = line.substr(key.length() + 3);
-
-        if (key == "vendor_id") {
-            vendor = val;
-            break;
-        }
-    }
-
-    SPDLOG_INFO("cpu vendor: {}", vendor);
-
-    if (vendor == "GenuineIntel")
-        get_cpu_cores_types_intel();
-#endif
-
-#if defined(__arm__) || defined(__aarch64__)
-    get_cpu_cores_types_arm();
-#endif
-}
-
-void CPUStats::get_cpu_cores_types_intel() {
-    for (auto const& it : intel_cores) {
-        auto key = it.first;
-        auto file = it.second;
-
-        std::ifstream core_file(file);
-
-        if (!core_file.is_open()) {
-            SPDLOG_ERROR("failed to open core info file");
-            return;
-        }
-
-        std::string cpus;
-        std::getline(core_file, cpus);
-
-        std::regex rx("(\\d+)-(\\d+)");
-        std::smatch matches;
-
-        if (!std::regex_match(cpus, matches, rx) || matches.size() != 3)
-            continue;
-
-        int start = 0, end = 0;
-
-        try {
-            start = std::stoi(matches[1]);
-            end = std::stoi(matches[2]) + 1;
-        } catch (...) {
-            SPDLOG_ERROR("error parsing cpus \"{}\"", cpus);
-        }
-
-        for (int i = start; i < end; i++) {
-            for (size_t k = 0; k < m_cpuData.size(); k++) {
-                if (m_cpuData[k].cpu_id != i)
+        while (std::getline(file, line)) {
+
+            unsigned long long u, n, s, i, io, irq, sirq, st, g, gn;
+            int id;
+
+            if (sscanf(line.c_str(),
+                "cpu%4d %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
+                &id, &u,&n,&s,&i,&io,&irq,&sirq,&st,&g,&gn) == 11)
+            {
+                parsed = true;
+
+                auto it = m_cpuIndexMap.find(id);
+                if (it == m_cpuIndexMap.end())
                     continue;
 
-                m_cpuData[k].label = key;
-                break;
+                calculateCPUData(
+                    m_cpuData[it->second],
+                    u,n,s,i,io,irq,sirq,st,g,gn
+                );
             }
         }
     }
-}
 
-void CPUStats::get_cpu_cores_types_arm() {
-    std::ifstream cpuinfo(PROCCPUINFOFILE);
-
-    if (!cpuinfo.is_open()) {
-        SPDLOG_ERROR("failed to open {}", PROCCPUINFOFILE);
-        return;
+    if (!parsed) {
+        update_process_usage(m_cpuData[0]);
     }
 
-    uint8_t cur_core = 0;
-    bool detected_first_core = false;
-
-    for (std::string line; std::getline(cpuinfo, line);) {
-        if (line.empty() || line.find(":") + 1 == line.length())
-            continue;
-
-        auto key = line.substr(0, line.find(":") - 1);
-        auto val = line.substr(key.length() + 3);
-
-        if (key != "CPU part")
-            continue;
-
-        if (detected_first_core)
-            cur_core += 1;
-        else
-            detected_first_core = true;
-
-        std::string core_type;
-
-        try {
-            core_type = arm_cores.at(val);
-            SPDLOG_INFO("found {} core", core_type);
-        }
-        catch(const std::out_of_range& ex) {
-            SPDLOG_WARN("unknown cpu part {}", val);
-            continue;
-        }
-
-        // just in case
-        for (size_t i = 0; i < m_cpuData.size(); i++) {
-            if (m_cpuData[i].cpu_id != cur_core)
-                continue;
-
-            m_cpuData[i].label = core_type;
-        }
-    }
+    return true;
 }
-
-CPUStats cpuStats;
