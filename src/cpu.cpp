@@ -5,16 +5,25 @@
 #include <algorithm>
 #include <cstring>
 #include <spdlog/spdlog.h>
+#include <chrono>
+
+// =====================
+// helper
+// =====================
+static inline bool starts_with(const std::string& s, const char* p)
+{
+    return s.rfind(p, 0) == 0;
+}
 
 #define PROCSTATFILE "/proc/stat"
 
 // =====================
-// global instance（必须有）
+// global instance
 // =====================
 CPUStats cpuStats;
 
 // =====================
-// self usage fallback
+// self fallback
 // =====================
 static unsigned long long prev_ticks = 0;
 static std::chrono::steady_clock::time_point prev_time;
@@ -64,6 +73,7 @@ static void update_self(CPUData& d) {
     unsigned long long diff = (cur > prev_ticks) ? (cur - prev_ticks) : 0;
 
     float usage = ((float)diff / clk_tck) / dt * 100.f;
+
     d.percent = std::clamp(usage / cores, 0.f, 100.f);
 
     prev_ticks = cur;
@@ -71,7 +81,7 @@ static void update_self(CPUData& d) {
 }
 
 // =====================
-// calculate CPU
+// calc cpu
 // =====================
 static void calc(CPUData& d,
     unsigned long long u,unsigned long long n,unsigned long long s,
@@ -118,9 +128,13 @@ static void calc(CPUData& d,
 
     float t = d.totalPeriod;
 
-    d.percent = std::clamp(
-        (d.userPeriod + d.nicePeriod + d.systemAllPeriod + d.stealPeriod) * 100.f / t,
-        0.f, 100.f);
+    float usage =
+        d.userPeriod +
+        d.nicePeriod +
+        d.systemAllPeriod +
+        d.stealPeriod;
+
+    d.percent = std::clamp(usage * 100.f / t, 0.f, 100.f);
 }
 
 // =====================
@@ -161,6 +175,7 @@ bool CPUStats::Init()
         for (int i = 0; i < n; i++) {
             CPUData d{};
             d.cpu_id = i;
+
             m_cpuIndexMap[i] = m_cpuData.size();
             m_cpuData.push_back(d);
         }
@@ -208,7 +223,7 @@ bool CPUStats::UpdateCPUData()
 }
 
 // =====================
-// REQUIRED STUBS (解决 linker)
+// stubs
 // =====================
 bool CPUStats::GetCpuFile() { return true; }
 bool CPUStats::UpdateCoreMhz() { return true; }
