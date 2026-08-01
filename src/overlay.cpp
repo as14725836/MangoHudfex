@@ -28,6 +28,7 @@
 #include "net.h"
 #include "fex.h"
 #include "ftrace.h"
+#include "fusion_appearance.hpp"
 
 #ifdef __linux__
 #include <libgen.h>
@@ -342,6 +343,8 @@ void overlay_new_frame(const struct overlay_params& params)
    else {
       ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
    }
+   // FusionHUD 外观对齐
+   fusionhud::applyFusionAppearance(params);
 }
 
 void overlay_end_frame()

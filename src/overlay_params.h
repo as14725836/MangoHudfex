@@ -135,6 +135,11 @@ struct Tracepoint;
    OVERLAY_PARAM_BOOL(flip_efficiency)               \
    OVERLAY_PARAM_BOOL(gpu_power_limit)               \
    OVERLAY_PARAM_BOOL(dx_api)                        \
+   OVERLAY_PARAM_BOOL(fusion_full)                   \
+   OVERLAY_PARAM_BOOL(fusion_tiles)                  \
+   OVERLAY_PARAM_BOOL(fusion_pill)                   \
+   OVERLAY_PARAM_BOOL(fusion_minimal)                \
+   OVERLAY_PARAM_BOOL(fusion_mega)                   \
    OVERLAY_PARAM_CUSTOM(fps_sampling_period)         \
    OVERLAY_PARAM_CUSTOM(output_folder)               \
    OVERLAY_PARAM_CUSTOM(output_file)                 \

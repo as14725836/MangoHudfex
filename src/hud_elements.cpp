@@ -29,6 +29,7 @@
 #include "ftrace.h"
 #include "winesync.h"
 #include "fps_limiter.h"
+#include "fusion_appearance.hpp"
 
 #define CHAR_CELSIUS    "\xe2\x84\x83"
 #define CHAR_FAHRENHEIT "\xe2\x84\x89"

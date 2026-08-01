@@ -43,6 +43,7 @@
 #include "app/mangoapp.h"
 #include "fps_metrics.h"
 #include "version.h"
+#include "fusion_layout.hpp"
 
 std::unique_ptr<fpsMetrics> fpsmetrics;
 std::mutex config_mtx;
@@ -1393,10 +1394,153 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
             }
             // Rembrandt and Phoenix APUs (Z1, Z1E, Z2 Go)
             if (gpu->device_id == 0x1681 || gpu->device_id == 0x15bf){
-               add_to_options(params, "gpu_power_limit", "0");
+                  add_to_options(params, "gpu_power_limit", "0");
+               }
             }
-         }
 
+            break;
+
+      // === FusionHUD Presets (10–14) ===
+      case 10:  // FULL — 所有指标
+         add_to_options(params, "full", "1");
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frame_timing", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "cpu_temp", "1");
+         add_to_options(params, "cpu_mhz", "1");
+         add_to_options(params, "cpu_power", "1");
+         add_to_options(params, "core_load", "1");
+         add_to_options(params, "core_bars", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "gpu_temp", "1");
+         add_to_options(params, "gpu_core_clock", "1");
+         add_to_options(params, "gpu_mem_clock", "1");
+         add_to_options(params, "gpu_power", "1");
+         add_to_options(params, "gpu_junction_temp", "1");
+         add_to_options(params, "gpu_mem_temp", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "vram", "1");
+         add_to_options(params, "battery", "1");
+         add_to_options(params, "battery_watt", "1");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "hud_no_margin", "1");
+         add_to_options(params, "table_columns", "1");
+         add_to_options(params, "background_alpha", "0.8");
+         add_to_options(params, "round_corners", "12");
+         add_to_options(params, "font_size", "22");
+         add_to_options(params, "gpu_color", "5EE08A");
+         add_to_options(params, "cpu_color", "58A6FF");
+         add_to_options(params, "vram_color", "BC8CFF");
+         add_to_options(params, "ram_color", "FF8CBC");
+         add_to_options(params, "engine_color", "EB5B5B");
+         add_to_options(params, "io_color", "E07B85");
+         add_to_options(params, "battery_color", "FFD54F");
+         add_to_options(params, "text_color", "FFFFFF");
+         add_to_options(params, "background_color", "1A1D24");
+         params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
+         break;
+
+      case 11:  // TILES — 磁贴布局
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frame_timing", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "cpu_temp", "1");
+         add_to_options(params, "cpu_mhz", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "gpu_temp", "1");
+         add_to_options(params, "gpu_core_clock", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "vram", "1");
+         add_to_options(params, "battery", "1");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "table_columns", "2");
+         add_to_options(params, "horizontal", "1");
+         add_to_options(params, "background_alpha", "0.8");
+         add_to_options(params, "round_corners", "12");
+         add_to_options(params, "font_size", "20");
+         add_to_options(params, "cellpadding_y", "0.1");
+         params->enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] = true;
+         break;
+
+      case 12:  // PILL — 胶囊布局
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frame_timing", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "cpu_temp", "1");
+         add_to_options(params, "cpu_mhz", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "gpu_temp", "1");
+         add_to_options(params, "gpu_core_clock", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "vram", "1");
+         add_to_options(params, "battery", "1");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "table_columns", "1");
+         add_to_options(params, "background_alpha", "0.9");
+         add_to_options(params, "round_corners", "16");
+         add_to_options(params, "font_size", "21");
+         add_to_options(params, "cellpadding_y", "0.0");
+         params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = true;
+         break;
+
+      case 13:  // MINIMAL — 极简
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "vram", "0");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "table_columns", "1");
+         add_to_options(params, "background_alpha", "0.85");
+         add_to_options(params, "round_corners", "8");
+         add_to_options(params, "font_size", "18");
+         params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = true;
+         break;
+
+      case 14:  // MEGA — 巨幅（含 FPS 图）
+         add_to_options(params, "full", "1");
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frame_timing", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "cpu_temp", "1");
+         add_to_options(params, "cpu_mhz", "1");
+         add_to_options(params, "cpu_power", "1");
+         add_to_options(params, "core_load", "1");
+         add_to_options(params, "core_bars", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "gpu_temp", "1");
+         add_to_options(params, "gpu_core_clock", "1");
+         add_to_options(params, "gpu_mem_clock", "1");
+         add_to_options(params, "gpu_power", "1");
+         add_to_options(params, "gpu_junction_temp", "1");
+         add_to_options(params, "gpu_mem_temp", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "vram", "1");
+         add_to_options(params, "battery", "1");
+         add_to_options(params, "battery_watt", "1");
+         add_to_options(params, "graphs", "1");
+         add_to_options(params, "histogram", "1");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "table_columns", "1");
+         add_to_options(params, "background_alpha", "0.85");
+         add_to_options(params, "round_corners", "14");
+         add_to_options(params, "font_size", "26");
+         add_to_options(params, "gpu_color", "5EE08A");
+         add_to_options(params, "cpu_color", "58A6FF");
+         add_to_options(params, "vram_color", "BC8CFF");
+         add_to_options(params, "ram_color", "FF8CBC");
+         add_to_options(params, "background_color", "1A1D24");
+         params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = true;
          break;
 
    }

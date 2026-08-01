@@ -2,6 +2,7 @@
 #include "file_utils.h"
 #include "hud_elements.h"
 #include "overlay_params.h"
+#include "fusion_metrics.hpp"
 #include <fstream>
 #include <algorithm>
 #include <iostream>
@@ -129,65 +130,32 @@ GPUS::GPUS(const overlay_params* early_params) {
             }
             available_gpus.emplace_back(adreno);
 
-            // 启动后台线程监控 GPU 使用率
+            // 启动后台线程监控 GPU 使用率（跨厂商：Adreno / Mali / PowerVR / amdgpu）
             std::thread([adreno](){
+                auto gpu_paths = fusionhud::gpuProbePaths();
                 while(true) {
-                    std::ifstream stream("/sys/class/kgsl/kgsl-3d0/gpubusy");
-                    if (stream.is_open()) {
-                        std::string line;
-                        if (std::getline(stream, line)) {
-                            long long used = 0, total = 0;
-                            if (sscanf(line.c_str(), "%lld %lld", &used, &total) == 2 && total > 0) {
-                                 int val = (int)((float)used / total * 100);
-                                 if (val > 100) val = 100;
-                                 if (val < 0) val = 0;
-                                 adreno->metrics.load = val;
-                            } else {
-                                 adreno->metrics.load = -1; // 解析失败，标记为 N/A
-                            }
-                        } else {
-                            adreno->metrics.load = -1; // 读取失败，标记为 N/A
-                        }
-                    } else {
-                        adreno->metrics.load = -1; // 文件无法打开，标记为 N/A
+                    // GPU 使用率
+                    int load = fusionhud::readGpuUtilization(gpu_paths);
+                    adreno->metrics.load = load;
+
+                    // GPU 温度
+                    int temp = fusionhud::readGpuTemperature();
+                    if (temp >= 0) {
+                        adreno->metrics.temp = temp;
                     }
-                    
-                    // 读取 GPU 温度
-                    std::ifstream temp_stream("/sys/class/kgsl/kgsl-3d0/temp");
-                    if (temp_stream.is_open()) {
-                        std::string temp_str;
-                        if (std::getline(temp_stream, temp_str)) {
-                            try {
-                                int temp = std::stoi(temp_str);
-                                if (temp > 1000) temp /= 1000; // 毫度转度
-                                adreno->metrics.temp = temp;
-                            } catch (...) {}
-                        }
+
+                    // GPU 频率
+                    double freq = fusionhud::readGpuFrequency(gpu_paths);
+                    if (freq > 0) {
+                        adreno->metrics.CoreClock = (int)freq;
                     }
-                    
-                    // 读取 GPU 频率
-                    const char* freq_paths[] = {
-                        "/sys/class/kgsl/kgsl-3d0/gpuclk",
-                        "/sys/class/kgsl/kgsl-3d0/cur_freq",
-                        "/sys/kernel/gpu/gpu_clock",
-                        nullptr
-                    };
-                    for (int i = 0; freq_paths[i]; i++) {
-                        std::ifstream freq_stream(freq_paths[i]);
-                        if (freq_stream.is_open()) {
-                            std::string freq_str;
-                            if (std::getline(freq_stream, freq_str)) {
-                                try {
-                                    double freq = std::stod(freq_str);
-                                    if (freq > 1e7) freq /= 1e6; // Hz -> MHz
-                                    else if (freq > 1e4) freq /= 1e3; // KHz -> MHz
-                                    adreno->metrics.CoreClock = (int)freq;
-                                    break;
-                                } catch (...) {}
-                            }
-                        }
+
+                    // VRAM
+                    auto vram = fusionhud::detectVram();
+                    if (vram.usedMB >= 0) {
+                        adreno->metrics.sys_vram_used = vram.usedMB;
                     }
-                    
+
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
             }).detach();
