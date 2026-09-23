@@ -1,0 +1,304 @@
+name: 开发版 MangoHudfex (aarch64)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'  # 每5分钟运行一次
+
+permissions:
+  contents: write  # 允许 GITHUB_TOKEN 创建 Release
+
+env:
+  SRC_REPO: https://github.com/as14725836/MangoHudfex
+  SRC_API_REPO: as14725836/MangoHudfex
+  LAST_DEV_COMMIT_FILE: last_dev_mangohudfex_commit.txt
+  MESON_PREFIX: /usr
+  MESON_LIBDIR: lib/mangohud
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      # 🔹 检出当前仓库
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      # 🔹 修复依赖
+      - name: 修复依赖
+        run: |
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo apt update
+
+      # 🔹 安装依赖（MangoHudfex = meson + ninja + python3-mako + glslang + GL/EGL/Vulkan/X11/wayland/dbus）
+      - name: 安装依赖
+        run: |
+          sudo apt-get install -y \
+            build-essential gcc g++ git pkg-config \
+            cmake patchelf \
+            meson ninja-build python3 python3-mako \
+            glslang-tools \
+            libglvnd-dev libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            libx11-dev libxext-dev libxrandr-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libdbus-1-dev \
+            jq curl unzip wget
+
+          echo "--- 工具版本 ---"
+          meson --version
+          ninja --version
+          python3 -c "import mako; print('mako OK')"
+          (glslangValidator --version | head -1) || echo "⚠️ glslangValidator 缺失"
+
+      # 🔹 获取最新提交信息
+      - name: 获取最新提交信息
+        id: get_info
+        run: |
+          # 获取最新 commit 完整哈希
+          LATEST_COMMIT_FULL=$(git ls-remote ${{ env.SRC_REPO }} HEAD | awk '{print $1}')
+          LATEST_COMMIT_SHORT=${LATEST_COMMIT_FULL:0:8}
+
+          # 获取提交时间和作者
+          curl -s "https://api.github.com/repos/${{ env.SRC_API_REPO }}/commits/$LATEST_COMMIT_FULL" -o commit.json
+          COMMIT_DATE=$(jq -r '.commit.author.date' commit.json | cut -d'T' -f1)
+          COMMIT_AUTHOR=$(jq -r '.commit.author.name' commit.json)
+          COMMIT_MESSAGE=$(jq -r '.commit.message' commit.json | head -n1)
+
+          # 获取当前日期作为版本号
+          CURRENT_DATE=$(date +%Y%m%d%H%M)
+          VERSION="dev-${CURRENT_DATE}-${LATEST_COMMIT_SHORT}"
+          BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "LATEST_COMMIT=$LATEST_COMMIT_FULL" >> $GITHUB_ENV
+          echo "LATEST_COMMIT_SHORT=$LATEST_COMMIT_SHORT" >> $GITHUB_ENV
+          echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
+          echo "COMMIT_AUTHOR=$COMMIT_AUTHOR" >> $GITHUB_ENV
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
+
+          echo "📊 构建信息:"
+          echo "   版本: $VERSION"
+          echo "   提交: $LATEST_COMMIT_SHORT"
+          echo "   作者: $COMMIT_AUTHOR"
+          echo "   日期: $COMMIT_DATE"
+
+      # 🔹 获取上次构建的提交
+      - name: 获取上次构建信息
+        id: get_last
+        run: |
+          if [ -f "${{ env.LAST_DEV_COMMIT_FILE }}" ]; then
+            LAST_BUILD=$(cat "${{ env.LAST_DEV_COMMIT_FILE }}")
+            echo "👉 上次构建提交: ${LAST_BUILD:0:8}"
+            echo "last_build=$LAST_BUILD" >> $GITHUB_OUTPUT
+          else
+            echo "👉 首次构建，无历史记录"
+            echo "last_build=none" >> $GITHUB_OUTPUT
+          fi
+
+      # 🔹 判断是否需要构建
+      - name: 检查是否需要构建
+        id: check_build
+        run: |
+          LAST_BUILD="${{ steps.get_last.outputs.last_build }}"
+          CURRENT_COMMIT="${{ env.LATEST_COMMIT }}"
+
+          if [ "$CURRENT_COMMIT" = "$LAST_BUILD" ]; then
+            echo "✅ 无新提交，跳过构建"
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "🟢 检测到新提交，准备构建"
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 🔹 跳过无更新构建
+      - name: 跳过构建
+        if: steps.check_build.outputs.skip_build == 'true'
+        run: |
+          echo "✅ 无新提交，跳过构建"
+          exit 0
+
+      # 🔹 克隆 MangoHudfex 并构建（Meson + Ninja）
+      - name: 克隆 MangoHudfex 并构建
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          # 清理旧目录
+          rm -rf mangohud
+
+          # 克隆最新源码
+          #  - 完整克隆：meson 的 vcs_tag 会调 `git describe --tags`，浅克隆取不到 tag
+          #  - --recurse-submodules：modules/minhook 是 required 依赖
+          git clone --recurse-submodules ${{ env.SRC_REPO }} mangohud
+
+          cd mangohud
+          git log -1 --oneline
+          echo "--- 子模块 ---"
+          git submodule status || true
+
+          # 设置 Termux glibc 环境变量（按“编译环境不用改”原样保留；runner 上无副作用）
+          unset LD_PRELOAD
+          export GLIBC_PREFIX=/data/data/com.termux/files/usr/glibc
+          export PATH=$GLIBC_PREFIX/bin:$PATH
+          export LD_LIBRARY_PATH=$GLIBC_PREFIX/lib:$LD_LIBRARY_PATH
+
+          # 说明：box64 那几处源码 sed/patch（CMakeLists.txt / src/libtools/signals.c /
+          #       src/os/emit_signals_linux.c）已移除 —— 本仓库没有这些文件，构建系统也不是 CMake
+
+          # Meson 配置
+          #  with_fex=true  ->  pre_args += -DHAVE_FEX，并编译 src/fex.cpp（FEX 统计/HUD 集成）
+          #  nvml/xnvctrl   ->  关闭（NVIDIA 专用，Android/骁龙无意义，也少两个依赖）
+          meson setup build \
+            --prefix=${{ env.MESON_PREFIX }} \
+            --libdir=${{ env.MESON_LIBDIR }} \
+            --buildtype=release \
+            -Dappend_libdir_mangohud=false \
+            -Dwith_fex=true \
+            -Dwith_nvml=disabled \
+            -Dwith_xnvctrl=disabled \
+            -Dwith_x11=enabled \
+            -Dwith_wayland=enabled \
+            -Dwith_dbus=enabled \
+            -Dmangoapp=false \
+            -Dmangohudctl=false \
+            -Dinclude_doc=false \
+            -Dtests=disabled
+
+          # 编译
+          ninja -C build
+          echo "✅ 构建完成"
+
+          # 校验 -Dwith_fex 真的生效（HAVE_FEX 会写进编译命令行）
+          if grep -q 'HAVE_FEX' build/build.ninja build/compile_commands.json 2>/dev/null; then
+            echo "✅ FEX 支持已编入（-DHAVE_FEX 已出现在 build.ninja）"
+          else
+            echo "❌ 未检测到 HAVE_FEX，with_fex 没生效"
+            exit 1
+          fi
+
+          # 安装到 DESTDIR（保持 /usr 布局，方便直接解包到 Termux glibc 根）
+          DESTDIR="$PWD/release" ninja -C build install
+
+          # 瘦身（在 install 之后做）
+          find release -type f -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+          # 检查产物
+          echo "📦 安装树（前 30 项）:"
+          find release -type f \( -name '*.so*' -o -name 'mangohud' -o -name '*.json' \) | head -30
+
+          echo "--- 关键产物 ---"
+          if [ -f "build/src/libMangoHud.so" ]; then
+            echo "✅ 生成 Vulkan 层: build/src/libMangoHud.so"
+            file build/src/libMangoHud.so
+            ls -lh build/src/*.so
+            echo "📌 MangoHud 版本:"
+            strings build/src/libMangoHud.so | grep -m1 -E '^v?[0-9]+\.[0-9]+\.[0-9]+' || echo "⚠️ 无法从二进制读取版本"
+          else
+            echo "❌ 未找到 libMangoHud.so"
+            exit 1
+          fi
+
+          # 打包
+          cd ..
+          echo "版本: ${{ env.VERSION }} / 提交: ${{ env.LATEST_COMMIT_SHORT }} / with_fex=ON" > mangohud/release/BUILD_INFO.txt
+          TAR_FILE="termux-glibc-mangohudfex-dev-${{ env.VERSION }}.tar.gz"
+          tar -czvf $TAR_FILE -C mangohud/release .
+
+          echo "TAR_FILE=$TAR_FILE" >> $GITHUB_ENV
+          echo "✅ 打包完成: $TAR_FILE"
+
+          # 保存构建记录
+          echo "${{ env.LATEST_COMMIT }}" > "${{ env.LAST_DEV_COMMIT_FILE }}"
+
+      # 🔹 上传构建产物
+      - name: 上传构建产物
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mangohudfex-dev-${{ env.VERSION }}
+          path: ${{ env.TAR_FILE }}
+          retention-days: 7
+
+      # 🔹 保存 commit 记录
+      - name: 保存构建记录
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-dev-mangohudfex-commit
+          path: ${{ env.LAST_DEV_COMMIT_FILE }}
+          retention-days: 90
+
+      # 🔹 发布到 GitHub Release
+      - name: 发布到 GitHub Release
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mangohudfex-dev-${{ env.VERSION }}
+          name: "MangoHudfex 开发版 ${{ env.VERSION }} (aarch64, Termux glibc)"
+          body: |
+            ## 🚀 MangoHudfex 自动构建 - 开发版
+
+            来源仓库: [`as14725836/MangoHudfex`](https://github.com/as14725836/MangoHudfex)
+            （`moze30/MangoHud` 的 FEX 分支，构建系统 Meson + Ninja）
+
+            ### 📅 构建信息
+            | 项目 | 信息 |
+            |------|------|
+            | **版本** | `${{ env.VERSION }}` |
+            | **Commit** | `${{ env.LATEST_COMMIT_SHORT }}` |
+            | **作者** | `${{ env.COMMIT_AUTHOR }}` |
+            | **提交日期** | `${{ env.COMMIT_DATE }}` |
+            | **提交消息** | `${{ env.COMMIT_MESSAGE }}` |
+            | **构建时间** | `${{ env.BUILD_TIME }}` |
+            | **平台** | `aarch64` |
+            | **环境** | `Termux glibc（Meson + Ninja）` |
+
+            ### ⚙️ 编译选项
+            ```meson
+            --prefix=/usr
+            --libdir=lib/mangohud
+            --buildtype=release
+            -Dappend_libdir_mangohud=false
+            -Dwith_fex=true          # <- 本 fork 的关键开关（-DHAVE_FEX + src/fex.cpp）
+            -Dwith_nvml=disabled
+            -Dwith_xnvctrl=disabled
+            -Dwith_x11=enabled
+            -Dwith_wayland=enabled
+            -Dwith_dbus=enabled
+            -Dmangoapp=false
+            -Dmangohudctl=false
+            -Dinclude_doc=false
+            -Dtests=disabled
+            ```
+
+            ### 📥 安装方法
+            ```bash
+            # 1. 解包到 Termux glibc 根（安装树为 usr/... 布局）
+            tar -xzf termux-glibc-mangohudfex-dev-${{ env.VERSION }}.tar.gz \
+              -C /data/data/com.termux/files/usr/glibc/
+
+            # 2. 把 Vulkan 层清单里的库路径改到 Termux glibc 根
+            find /data/data/com.termux/files/usr/glibc/usr/share/vulkan -name '*.json' \
+              -exec sed -i 's#/usr/lib/mangohud#/data/data/com.termux/files/usr/glibc/usr/lib/mangohud#g' {} +
+
+            # 3. 使用（Vulkan：自动启用 implicit layer）
+            export VK_LAYER_PATH=/data/data/com.termux/files/usr/glibc/usr/share/vulkan/implicit_layer.d
+            export MANGOHUD=1
+
+            # 4. 或直接 LD_PRELOAD（OpenGL / 通用）
+            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/usr/lib/mangohud/libMangoHud.so
+            ```
+
+            ### ⚠️ 注意事项
+            - 这是**自动构建的开发版**，基于 master 最新提交，可能不稳定
+            - `-Dwith_fex=true` 已开启，CI 会用 `grep HAVE_FEX build/build.ninja` 校验没编漏
+            - NVML / XNVCtrl 已关闭（NVIDIA 专用，Android/骁龙无意义）
+            - 若运行期报 `GLIBCXX_x.x.xx not found`，说明 Termux glibc 的 libstdc++ 比构建机（Ubuntu 24.04）旧，需改用更老基础镜像重新构建
+            - 每5分钟检查一次上游更新，有新提交时自动构建
+
+            ---
+            *🤖 本 Release 由 GitHub Actions 自动构建生成*
+          files: ${{ env.TAR_FILE }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
