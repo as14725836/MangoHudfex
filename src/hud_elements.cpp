@@ -699,11 +699,16 @@ void HudElements::vram(){
 
                 if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_gpu_mem_clock]){
                     ImguiNextColumnOrNewRow();
-                    right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%i", gpu->metrics.MemClock);
-                    ImGui::SameLine(0, 1.0f);
-                    ImGui::PushFont(HUDElements.sw_stats->font_small);
-                    HUDElements.TextColored(HUDElements.colors.text, "MHz");
-                    ImGui::PopFont();
+                    // Adreno 等没有显存频率读数的设备：显示 N/A，不再显示假的 0
+                    if (gpu->metrics.MemClock > 0) {
+                        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%i", gpu->metrics.MemClock);
+                        ImGui::SameLine(0, 1.0f);
+                        ImGui::PushFont(HUDElements.sw_stats->font_small);
+                        HUDElements.TextColored(HUDElements.colors.text, "MHz");
+                        ImGui::PopFont();
+                    } else {
+                        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%s", "N/A");
+                    }
                 }
                 if (!HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_horizontal])
                     ImGui::TableNextRow();

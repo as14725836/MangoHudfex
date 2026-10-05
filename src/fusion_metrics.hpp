@@ -719,4 +719,47 @@ inline VramInfo detectVramCached(unsigned refresh_ms = 200) {
     return cached;
 }
 
+// 内存(DDR)频率，MHz；读不到返回 -1。
+// Adreno/kgsl 不提供"显存频率"，GPU 用的是系统 LPDDR，
+// 所以用高通总线 DCVS 的 DDR 时钟作为内存频率（单位 kHz）。
+inline double readMemClockMHz() {
+    static const char* kPaths[] = {
+        "/sys/devices/system/cpu/bus_dcvs/DDR/cur_freq",     // 高通：DDR 总线时钟
+        "/sys/devices/system/cpu/bus_dcvs/DDRQOS/cur_freq",
+        "/sys/devices/system/cpu/bus_dcvs/BIMC/cur_freq",
+        "/sys/class/devfreq/ddrqos/cur_freq",
+        "/sys/class/devfreq/soc:qcom,cpubw/cur_freq",
+        "/sys/class/devfreq/gpufreq/cur_freq",               // 退路：GPU 频率(至少是个数)
+        nullptr
+    };
+    for (int i = 0; kPaths[i]; ++i) {
+        std::ifstream f(kPaths[i]);
+        if (!f.is_open()) continue;
+        std::string line;
+        if (!std::getline(f, line)) continue;
+        try {
+            double v = std::stod(line);
+            if (v <= 0.0) continue;          // 0 表示没有有效读数（例如 DDRQOS 空闲）
+            if (v > 1e7)       v /= 1e6;     // Hz  -> MHz
+            else if (v > 1e4)  v /= 1e3;     // kHz -> MHz
+            if (v > 0.0 && v < 100000.0) return v;
+        } catch (...) {}
+    }
+    return -1.0;
+}
+
+// 带缓存版本（渲染路径每帧都要取）
+inline double readMemClockCachedMHz(unsigned refresh_ms = 200) {
+    static double cached = -1.0;
+    static long long last_ms = -1;
+    long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+    if (last_ms < 0 || now_ms - last_ms >= (long long)refresh_ms) {
+        cached = readMemClockMHz();
+        last_ms = now_ms;
+    }
+    return cached;
+}
+
 } // namespace fusionhud

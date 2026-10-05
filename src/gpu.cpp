@@ -157,6 +157,10 @@ GPUS::GPUS(const overlay_params* early_params) {
                     adreno->metrics.sys_vram_used =
                         vram.usedMB >= 0 ? static_cast<float>(vram.usedMB) / 1024.0f : -1.0f;
 
+                    // 内存(DDR)频率：kgsl 不提供显存频率，用总线 DCVS 的 DDR 时钟
+                    double mem_mhz = fusionhud::readMemClockMHz();
+                    adreno->metrics.MemClock = mem_mhz > 0.0 ? (int)(mem_mhz + 0.5) : 0;
+
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
             }).detach();

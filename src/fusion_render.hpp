@@ -447,6 +447,9 @@ struct Snapshot {
     int cpu_pct = -1, cpu_temp = -1, cpu_mhz = -1;
     int gpu_pct = -1, gpu_temp = -1, gpu_mhz = -1;
     float vram_used = -1.0f;
+    float vram_total = -1.0f;
+    int vram_pct = -1;
+    int mem_clock = -1;
 
     int ram_pct = -1;
     float ram_used = -1.0f, ram_total = -1.0f;
@@ -508,6 +511,8 @@ struct Sources {
     std::string gpu_name, engine_name_str, engine_version, driver_name;
     int gpu_load = -1, gpu_temp = -1, gpu_core_clock = -1;
     float vram_used_gib = -1.0f;
+    float vram_total_gib = -1.0f;
+    int mem_clock_mhz = -1;
     float cpu_load = -1.0f;
     int cpu_temp = -1, cpu_mhz = -1;
     float ram_used_gib = -1.0f, ram_total_gib = -1.0f;
@@ -534,6 +539,10 @@ inline Snapshot make_snapshot(const Sources& s) {
     o.gpu_temp = s.gpu_temp;
     o.gpu_mhz = s.gpu_core_clock;
     o.vram_used = s.vram_used_gib;
+    o.vram_total = s.vram_total_gib;
+    o.mem_clock = s.mem_clock_mhz;
+    if (s.vram_total_gib > 0.0f && s.vram_used_gib >= 0.0f)
+        o.vram_pct = iround(100.0f * s.vram_used_gib / s.vram_total_gib);
 
     o.cpu_pct = s.cpu_load >= 0.0f ? iround(s.cpu_load) : -1;
     o.cpu_temp = s.cpu_temp;
@@ -776,8 +785,20 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
             v.push_back(x);
         add("CPU", kColCpu, std::move(v));
     }
-    if (c.vram && s.vram_used >= 0.0f)
-        add("VRAM", kColVram, value_unit(gib(s.vram_used), row_px, unit_px));
+    if (c.vram && s.vram_used >= 0.0f) {
+        std::vector<Span> v = value_unit(gib(s.vram_used), row_px, unit_px);
+        if (s.vram_pct >= 0) {
+            v.push_back(gap(unit_px));
+            for (const Span& x : num_unit(&s.vram_pct, "%", row_px, unit_px))
+                v.push_back(x);
+        }
+        if (s.mem_clock > 0) {
+            v.push_back(gap(unit_px));
+            for (const Span& x : num_unit(&s.mem_clock, "MHz", row_px, unit_px))
+                v.push_back(x);
+        }
+        add("VRAM", kColVram, std::move(v));
+    }
     if (c.ram) {
         std::vector<Span> v;
         if (s.ram_used >= 0.0f)
@@ -946,6 +967,18 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         t.key = "VRAM";
         t.key_col = kColVram;
         t.value = value_unit(gib(s.vram_used), val_px, unit_px);
+        // 副行补上百分比 / 内存频率（读不到就不加，保持简洁）
+        std::string sub;
+        if (s.vram_pct >= 0)
+            sub = std::to_string(s.vram_pct) + "%";
+        if (s.mem_clock > 0)
+            sub += (sub.empty() ? std::string() : std::string(" · ")) + std::to_string(s.mem_clock) + " MHz";
+        if (s.vram_total > 0.0f)
+            sub += (sub.empty() ? std::string() : std::string(" · ")) + gib(s.vram_total);
+        if (!sub.empty()) {
+            t.sub = sub;
+            t.has_sub = true;
+        }
         push(std::move(t));
     }
     if (c.ram) {
@@ -1158,7 +1191,12 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
         l.push_back(Span{fmt_f(1000.0f / std::max(s.fps, 1.0f), 5, 1) + "ms", kColDim, stk_px});
         if (c.vram && s.vram_used >= 0.0f) {
             l.push_back(Span{" · ", kColDim, stk_px});
-            l.push_back(Span{gib(s.vram_used) + " vram", kColDim, stk_px});
+            std::string txt = gib(s.vram_used) + " vram";
+            if (s.vram_pct >= 0)
+                txt += " " + std::to_string(s.vram_pct) + "%";
+            if (s.mem_clock > 0)
+                txt += " " + std::to_string(s.mem_clock) + "MHz";
+            l.push_back(Span{txt, kColDim, stk_px});
         }
         stack.push_back(std::move(l));
     }
@@ -1338,8 +1376,20 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     }
 
     std::vector<Row> right;
-    if (c.vram && s.vram_used >= 0.0f)
-        right.push_back(Row{Span{"VRAM", kColVram, row_px}, value_unit(gib(s.vram_used), row_px, unit_px), false});
+    if (c.vram && s.vram_used >= 0.0f) {
+        std::vector<Span> v = value_unit(gib(s.vram_used), row_px, unit_px);
+        if (s.vram_pct >= 0) {
+            v.push_back(gap(unit_px));
+            for (const Span& x : num_unit(&s.vram_pct, "%", row_px, unit_px))
+                v.push_back(x);
+        }
+        if (s.mem_clock > 0) {
+            v.push_back(gap(unit_px));
+            for (const Span& x : num_unit(&s.mem_clock, "MHz", row_px, unit_px))
+                v.push_back(x);
+        }
+        right.push_back(Row{Span{"VRAM", kColVram, row_px}, std::move(v), false});
+    }
     if (c.ram) {
         std::vector<Span> v;
         if (s.ram_used >= 0.0f)

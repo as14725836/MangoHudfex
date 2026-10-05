@@ -737,13 +737,27 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
             //    （-1 时 FusionHUD 不画这一行，标准 HUD 显示 N/A）。
             //  注意：这里的 0 是默认值，不代表"显存为 0"，所以必须当成未探测到处理。
             float vram_gib = g->metrics.sys_vram_used;
-            if (vram_gib <= 0.0f) {
+            float vram_total_gib = -1.0f;
+            {
                 auto vi = fusionhud::detectVramCached();
-                vram_gib = vi.usedMB >= 0
-                               ? static_cast<float>(vi.usedMB) / 1024.0f
-                               : -1.0f;
+                if (vram_gib <= 0.0f)
+                    vram_gib = vi.usedMB >= 0
+                                   ? static_cast<float>(vi.usedMB) / 1024.0f
+                                   : -1.0f;
+                if (vi.totalMB > 0)
+                    vram_total_gib = static_cast<float>(vi.totalMB) / 1024.0f;
             }
             src.vram_used_gib = vram_gib;
+            src.vram_total_gib = vram_total_gib;
+            // 内存频率：优先用 GPU 指标线程采到的，没有就自己探测（DDR 总线时钟）
+            {
+                int mem = g->metrics.MemClock;
+                if (mem <= 0) {
+                    double m = fusionhud::readMemClockCachedMHz();
+                    mem = m > 0.0 ? static_cast<int>(m + 0.5) : -1;
+                }
+                src.mem_clock_mhz = mem;
+            }
          }
          src.cpu_load = cpuStats.GetCPUDataTotal().percent;
          src.cpu_temp = cpuStats.GetCPUDataTotal().temp;
