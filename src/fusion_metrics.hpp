@@ -526,6 +526,28 @@ inline int readGpuTemperature() {
     return -1;
 }
 
+// 是否是 Adreno / kgsl 设备（Android 上的高通 GPU）。
+// 这类设备是统一内存(UMA)：GPU 没有独立显存，显存就是共享的系统内存。
+inline bool fhIsAdrenoKgsl() {
+    std::ifstream f("/sys/class/kgsl/kgsl-3d0/gpu_model");
+    if (f.is_open()) return true;
+    std::ifstream g("/sys/class/kgsl/kgsl-3d0/gpubusy");
+    return g.is_open();
+}
+
+// 是否允许用"共享内存"来表示显存：
+//   MANGOHUD_VRAM_SHARED=0      -> 关闭（显示 N/A）
+//   MANGOHUD_VRAM_SHARED=1 等   -> 强制开启
+//   未设置                      -> Adreno/kgsl 设备上自动开启，其它设备关闭
+// 说明：统一内存设备的显存与系统内存是同一块 RAM，所以这个数值对它们有实际意义；
+//       桌面独显有真正的显存计数，不会走到这里，也不会被这个开关影响。
+inline bool fhVramSharedAllowed() {
+    const char* v = getenv("MANGOHUD_VRAM_SHARED");
+    if (v && v[0] == '0' && v[1] == '\0') return false;
+    if (v && *v) return true;
+    return fhIsAdrenoKgsl();
+}
+
 struct VramInfo {
     long long usedMB  = -1;
     long long totalMB = -1;
@@ -665,8 +687,9 @@ inline VramInfo detectVram() {
             return info;
         }
     }
-    // 4) 可选：把系统内存占用当作显存显示（统一内存设备才启用）。
-    if (fhEnvOn("MANGOHUD_VRAM_SHARED")) {
+    // 4) 统一内存设备（Adreno/kgsl）：显示共享内存占用作为显存。
+    //    默认在检测到 kgsl 时自动开启，可用 MANGOHUD_VRAM_SHARED=0 关闭。
+    if (fhVramSharedAllowed()) {
         long long used = -1, total = -1;
         if (probeSharedMemoryAsVramMB(used, total)) {
             info.usedMB  = used;
@@ -680,6 +703,20 @@ inline VramInfo detectVram() {
     info.usedMB  = -1;
     info.totalMB = -1;
     return info;
+}
+
+// 带缓存的显存探测：渲染路径每帧都会取值，不能每帧去 open 一堆文件。
+inline VramInfo detectVramCached(unsigned refresh_ms = 200) {
+    static VramInfo cached;
+    static long long last_ms = 0;
+    long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+    if (now_ms - last_ms >= (long long)refresh_ms) {
+        cached = detectVram();
+        last_ms = now_ms;
+    }
+    return cached;
 }
 
 } // namespace fusionhud

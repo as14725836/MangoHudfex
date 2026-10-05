@@ -729,10 +729,20 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
             src.gpu_load = g->metrics.load;
             src.gpu_temp = g->metrics.temp;
             src.gpu_core_clock = g->metrics.CoreClock;
-            // sys_vram_used 的默认值是 0：Android/Adreno 等没有独立显存计数的
-            // 设备上它一直是 0，直接显示会变成假的 "0.00 GiB"。这里把"非正数"
-            // 统一归一成 -1 = 不可用，FusionHUD 便不会画这一行。
-            src.vram_used_gib = g->metrics.sys_vram_used > 0.0f ? g->metrics.sys_vram_used : -1.0f;
+            // 显存：
+            //  - 有真实读数（独显/DRM fdinfo）时直接用；
+            //  - 读不到（Adreno 等统一内存设备）时自己兜底探测一次：
+            //    会返回"共享内存占用"(GiB)，或者 -1 表示不可用
+            //    （-1 时 FusionHUD 不画这一行，标准 HUD 显示 N/A）。
+            //  注意：这里的 0 是默认值，不代表"显存为 0"，所以必须当成未探测到处理。
+            float vram_gib = g->metrics.sys_vram_used;
+            if (vram_gib <= 0.0f) {
+                auto vi = fusionhud::detectVramCached();
+                vram_gib = vi.usedMB >= 0
+                               ? static_cast<float>(vi.usedMB) / 1024.0f
+                               : -1.0f;
+            }
+            src.vram_used_gib = vram_gib;
          }
          src.cpu_load = cpuStats.GetCPUDataTotal().percent;
          src.cpu_temp = cpuStats.GetCPUDataTotal().temp;

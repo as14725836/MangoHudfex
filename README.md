@@ -781,8 +781,9 @@ FusionHUD 外观默认使用**随包安装的 DejaVu Sans Mono Bold**
   也不再显示假的 `0.0 GiB`（FusionHUD 则直接不画这一行）。
 - 走 DRM 的驱动（`msm` / `freedreno` 等）会自动从 `/proc/<pid>/fdinfo` 读取
   `drm-memory-vram` / `drm-memory-gtt`（与 `amdgpu` / `panfrost` 同一途径）。
-- 想让 Adreno 这类统一内存设备也显示数字：设 `MANGOHUD_VRAM_SHARED=1`，
-  用系统内存占用来代表显存（共享 RAM，数值有参考意义；桌面独显上会误导，故默认关闭）。
+- Adreno / kgsl 这类**统一内存**设备默认用**系统内存占用**作为显存显示（显存与系统内存
+  是同一块 RAM，数值有参考意义）；不想看到它可设 `MANGOHUD_VRAM_SHARED=0`，
+  此时显存显示 `N/A`。桌面独显有真实显存读数，不受这个开关影响。
 
 字号（整个 FusionHUD 外观等比缩放）：设 `font_scale=1.2` 更大、`font_scale=0.9` 更小；默认已比上游基准放大 20%。
 
