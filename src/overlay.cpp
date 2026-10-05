@@ -898,7 +898,27 @@ void init_system_info(){
       trim(cpu);
       kernel = exec("uname -r");
       trim(kernel);
-      os = exec("sed -n 's/PRETTY_NAME=\\(.*\\)/\\1/p' /etc/os-release");
+      // 系统名称：Termux/glibc 环境里没有 /etc/os-release，
+      // 直接 sed 会报 "sed: can't read /etc/os-release" 污染日志。
+      // 这里按 Termux glibc → Termux → Android → 常规路径依次查找，找到才执行 sed。
+      {
+         static const char* kOsReleasePaths[] = {
+            "/data/data/com.termux/files/usr/glibc/etc/os-release",
+            "/data/data/com.termux/files/usr/glibc/usr/lib/os-release",
+            "/data/data/com.termux/files/usr/etc/os-release",
+            "/data/data/com.termux/files/usr/lib/os-release",
+            "/system/etc/os-release",
+            "/etc/os-release",
+            "/usr/lib/os-release",
+         };
+         os.clear();
+         for (const char* p : kOsReleasePaths) {
+            if (file_exists(p)) {
+               os = exec(std::string("sed -n 's/PRETTY_NAME=\\(.*\\)/\\1/p' '") + p + "'");
+               break;
+            }
+         }
+      }
       os.erase(remove(os.begin(), os.end(), '\"' ), os.end());
       trim(os);
       cpusched = read_line("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
