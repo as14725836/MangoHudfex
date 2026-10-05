@@ -40,9 +40,9 @@ constexpr uint32_t kColRam    = 0xFFFF7BC0;  // colRam   粉
 constexpr uint32_t kColBat    = 0xFFFFAB5E;  // colBat   橙
 constexpr uint32_t kColFps    = 0xFFFF6B6B;  // colFps   红
 constexpr uint32_t kColGraph  = 0xFF5EE08A;  // colGraph 绿（与 GPU 同色）
-constexpr uint32_t kColValue  = 0xFFF2F5F9;  // colValue 数值白
-constexpr uint32_t kColDim    = 0xFF9AA4B2;  // colDim   标签灰
-constexpr uint32_t kColLo     = 0xFFE4E8EE;  // colLo    AVG / 1% / 0.1% / 0.01%
+constexpr uint32_t kColValue  = 0xFFFFFFFF;  // colValue 数值白
+constexpr uint32_t kColDim    = 0xFFC6D0DC;  // colDim   标签灰
+constexpr uint32_t kColLo     = 0xFFF7FAFF;  // colLo    AVG / 1% / 0.1% / 0.01%
 /** 面板描边色：AppThemeState.getCurrentAccentArgb() 的默认值 */
 constexpr uint32_t kColAccent = 0xFFA374FF;
 
@@ -139,7 +139,7 @@ constexpr float kSmallTextSp = 12.0f;
  * 上游 sp 会乘 Android density（主流手机 ≈2.6~3.5）；MangoHud 的 font_size 直接是
  * 像素高度。取 1.5 作为折中，并把结果夹在 [16,24] 内，避免在 HUD 上出现极端字号。
  */
-constexpr float kSpToPx = 1.5f;
+constexpr float kSpToPx = 1.8f;   // sp -> px 基准（1.8 比上游 1.5 大 20%，字号更醒目）
 
 inline float fusionFontSize(FusionSize s) {
     const FusionMetrics m = fusionMetrics(s);

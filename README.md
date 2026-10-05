@@ -775,5 +775,7 @@ FusionHUD 外观默认使用**随包安装的 DejaVu Sans Mono Bold**
 
 优先级：`font_file` > `MANGOHUD_FUSION_FONT` > 随包 DejaVu > Android 系统等宽字体 > 内嵌字体。
 
+字号（整个 FusionHUD 外观等比缩放）：设 `font_scale=1.2` 更大、`font_scale=0.9` 更小；默认已比上游基准放大 20%。
+
 分叉新增的其它开关：`hide_engine_names`、`hide_fps_superscript`、`inherit`、`dx_api`，
 含义与上游同名字段一致；`dx_api` 用于选择 DXVK / VKD3D / Zink 的显示口径。

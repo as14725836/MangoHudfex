@@ -1632,6 +1632,11 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     for (const Glyph& g : f.glyphs) {
         if (g.text.empty())
             continue;
+        // 先画一层深色投影（偏移随字号等比）：白字更"实"，
+        // 面板是半透明的，亮场景下也能压得住、不会显得发浅。
+        const float sh = std::max(1.0f, std::floor(g.px * 0.05f));
+        dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x + sh, o.y + g.top + sh),
+                    to_imcol(0xA0000000u), g.text.c_str(), g.text.c_str() + g.text.size());
         dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
                     g.text.c_str(), g.text.c_str() + g.text.size());
     }
