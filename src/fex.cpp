@@ -279,27 +279,53 @@ static std::vector<std::string> fex_shm_dirs() {
         add(std::string(p) + "/tmp");
     add("/data/data/com.termux/files/usr/tmp");
     add("/data/data/com.termux/files/usr/glibc/tmp");
+    // glibc 的 SHMDIR 在部分发行版/Termux 上被改到这些位置
+    add("/data/data/com.termux/files/usr/tmp/shm");
+    add("/data/data/com.termux/files/usr/var/run/shm");
+    add("/data/data/com.termux/files/usr/var/run");
+    add("/data/data/com.termux/files/usr/glibc/tmp/shm");
+    add("/data/data/com.termux/files/usr/glibc/var/run/shm");
+    add("/data/local/tmp");
     add("/tmp");
+    add("/tmp/shm");
+    add("/run/shm");
     return dirs;
+}
+
+// 在目录里找 fex-*-stats；depth 允许再深入一层子目录
+// （proot 会把 guest 的 /dev/shm 放在 /dev/shm/proot-<pid>-XXXX/ 下）。
+static void scan_one_dir(const std::string& dir, const std::string& self,
+                         std::vector<std::string>& out, int depth) {
+    DIR* d = opendir(dir.c_str());
+    if (!d)
+        return;
+    std::vector<std::string> subdirs;
+    while (auto* entry = readdir(d)) {
+        std::string name = entry->d_name;
+        if (name == "." || name == "..") continue;
+        if (name.rfind("fex-", 0) == 0) {
+            // 注意：fex-diskcache<hash> 之类的目录不是统计文件，
+            // is_shm_pid_alive() 会按 "fex-<pid>-stats" 的格式过滤掉。
+            if (name == self) continue;            // 第 3 步已经试过
+            if (!is_shm_pid_alive(name)) continue; // 跳过已死进程 / 非统计文件
+            out.push_back(dir + "/" + name);
+            continue;
+        }
+        if (depth > 0 &&
+            (name.rfind("proot-", 0) == 0 || name.rfind("shm", 0) == 0))
+            subdirs.push_back(dir + "/" + name);
+    }
+    closedir(d);
+    for (const std::string& sub : subdirs)
+        scan_one_dir(sub, self, out, depth - 1);
 }
 
 // 在所有候选目录里扫 fex-*-stats，返回完整路径
 static std::vector<std::string> scan_fex_stats_shms(int self_pid) {
     std::vector<std::string> result;
     const std::string self = shm_name_for_pid(self_pid);
-    for (const std::string& dir : fex_shm_dirs()) {
-        DIR* d = opendir(dir.c_str());
-        if (!d)
-            continue;
-        while (auto* entry = readdir(d)) {
-            std::string name = entry->d_name;
-            if (name.rfind("fex-", 0) != 0) continue;
-            if (name == self) continue;            // 第 3 步已经试过
-            if (!is_shm_pid_alive(name)) continue; // 跳过已死进程的残留
-            result.push_back(dir + "/" + name);
-        }
-        closedir(d);
-    }
+    for (const std::string& dir : fex_shm_dirs())
+        scan_one_dir(dir, self, result, 1);
     return result;
 }
 
@@ -368,7 +394,15 @@ static void init_shm(int pid) {
     }
     if (fd == -1) {
         fex_status = "Not Found!";
-        SPDLOG_DEBUG("FEX stats: no fex-*-stats found ({} candidates over {} dirs)", candidates.size(), dirs.size());
+        std::string dir_report;
+        for (const std::string& d : dirs) {
+            DIR* dd = opendir(d.c_str());
+            dir_report += d + (dd ? "(ok) " : "(no) ");
+            if (dd) closedir(dd);
+        }
+        SPDLOG_INFO("FEX stats: N/A (tried {} paths). dirs: {}", candidates.size(), dir_report);
+        SPDLOG_DEBUG("FEX stats: hint - the file only exists while the FEX process runs, "
+                     "and is removed when it exits (fex-diskcache* is NOT it)");
         goto err;
     }
     SPDLOG_INFO("FEX stats: using {}", used_name);
