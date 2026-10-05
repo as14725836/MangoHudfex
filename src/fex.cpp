@@ -390,12 +390,31 @@ static void init_shm(int pid) {
     // Try and open a FEX stats file that relates to the PID in focus.
     // 用普通 open()：shm_open 只会解析 /dev/shm，而这里还要找 Termux 的 tmp 目录。
     // If this fails then it is non-fatal, just means FEX isn't creating stats for that process.
+    // 逐个候选做预筛：只接受“能被 mmap 且至少装得下 header”的文件。
+    // 之前只要第一个候选存在就 break，于是 /dev/shm 里遗留的 0 字节文件会把
+    // Termux tmp 里的真文件挡住（表现为 FEX stats 一直 N/A）。
     for (const auto& path : candidates) {
-        fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd != -1) {
-            used_name = path;
-            break;
+        const int cand_fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (cand_fd == -1) {
+            continue;
         }
+        struct stat cand_buf{};
+        const bool ok = fstat(cand_fd, &cand_buf) == 0 &&
+                        cand_buf.st_size >= static_cast<off_t>(sizeof(fex_stats_header));
+        const long long cand_size = cand_buf.st_size;
+        if (!ok) {
+            static std::string last_skip;
+            if (last_skip != path) {
+                last_skip = path;
+                SPDLOG_INFO("FEX stats: skip {} (size {} < header {}，可能 FEX 还没写/写失败)",
+                            path, cand_size, static_cast<long long>(sizeof(fex_stats_header)));
+            }
+            ::close(cand_fd);
+            continue;
+        }
+        fd = cand_fd;
+        used_name = path;
+        break;
     }
     if (fd == -1) {
         fex_status = "Not Found!";
