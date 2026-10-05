@@ -79,6 +79,10 @@ inline std::string fmt_f(float v, int width, int prec = 1) {
     return std::string(b);
 }
 
+/** 名称类文本（GPU 型号 / 驱动名等）的最大宽度（sp）。
+ *  超过就换行 —— 否则一个长型号会把整块面板撑得很宽，甚至溢出磁贴。 */
+inline constexpr float kNameMaxWidthSp = 170.0f;
+
 /** 无数据时的占位：补齐到同样宽度，避免占位符比数字窄而再次抖动 */
 inline std::string pad_dash(int width) {
     if (width <= 1)
@@ -125,6 +129,10 @@ struct Tile {
     std::string sub;
     bool has_sub = false;
     bool wide = false;
+    // 宽磁贴上的长名称：按可用宽度换行（磁贴高度随之增长）
+    bool wrap = false;
+    std::string model;
+    std::vector<std::string> lines;
 };
 
 // ============================================================================
@@ -172,6 +180,65 @@ struct Metrics {
 // ============================================================================
 // Span 构造小工具（对应 Kotlin 的 numUnit / valueUnit / tempSpans / gap）
 // ============================================================================
+
+/**
+ * 按像素宽度把文本切成多行。
+ * 优先在空格处断行；单个词本身超宽时按字符硬断。返回至少 1 行。
+ */
+inline std::vector<std::string> wrap_text(const Metrics& m, const std::string& t, float px, float max_w) {
+    std::vector<std::string> out;
+    if (t.empty())
+        return out;
+    if (max_w <= 0.0f || m.measure(t, px) <= max_w) {
+        out.push_back(t);
+        return out;
+    }
+    std::string cur;
+    size_t i = 0;
+    while (i < t.size()) {
+        // 取下一个"词 + 尾随空格"
+        size_t j = i;
+        while (j < t.size() && t[j] != ' ')
+            ++j;
+        if (j < t.size())
+            ++j;
+        std::string word = t.substr(i, j - i);
+
+        if (!cur.empty() && m.measure(cur + word, px) > max_w) {
+            out.push_back(cur);
+            cur.clear();
+        }
+        // 单个词过长：按字符硬断
+        if (cur.empty() && m.measure(word, px) > max_w) {
+            std::string piece;
+            for (char ch : word) {
+                if (!piece.empty() && m.measure(piece + ch, px) > max_w) {
+                    out.push_back(piece);
+                    piece.clear();
+                }
+                piece += ch;
+            }
+            cur = piece;
+            i = j;
+            continue;
+        }
+        cur += word;
+        i = j;
+    }
+    if (!cur.empty())
+        out.push_back(cur);
+    if (out.empty())
+        out.push_back(t);
+    return out;
+}
+
+/** 把长名称按"面板自然宽度"换行：只增加行数，不把面板撑宽。
+ *  avail_px 传其余行形成的数值列宽度；再给一个下限，避免宽度退化到几个字符。 */
+inline std::vector<std::string> wrap_name_to(const Metrics& m, const std::string& t,
+                                            float px, float avail_px) {
+    const float floor_w = m.sp(96.0f);
+    return wrap_text(m, t, px, std::max(floor_w, avail_px));
+}
 
 inline Span gap(float unit_px) { return Span{"  ", kColDim, unit_px}; }
 
@@ -562,8 +629,9 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         rows.push_back(std::move(r));
     };
 
-    if (c.gpu_model && !s.gpu_model.empty())
-        add("GPU", kColGpu, {Span{s.gpu_model, kColValue, row_px}});
+    // 型号先不落行：等其它行算完"自然宽度"后再定换行点（两遍布局）
+    const std::string model_txt =
+        (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
     if (c.gpu) {
         std::vector<Span> v;
         for (const Span& x : num_unit(s.gpu_pct >= 0 ? &s.gpu_pct : nullptr, "%", row_px, unit_px))
@@ -642,6 +710,21 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         add("0.1%", kColLo, num_unit_f(s.low01, "FPS", row_px, unit_px));
         if (c.low001)
             add("0.01%", kColLo, num_unit_f(s.low001, "FPS", row_px, unit_px));
+    }
+
+    if (!model_txt.empty()) {
+        float lw = f.M.measure("GPU", row_px);
+        float vw = 0.0f;
+        for (const Row& r : rows) {
+            lw = std::max(lw, f.M.measure(r.label.text, row_px));
+            vw = std::max(vw, f.M.run_w(r.vals));
+        }
+        const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
+        std::vector<Row> mrows;
+        mrows.push_back(Row{Span{"GPU", kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        for (size_t i = 1; i < ml.size(); ++i)
+            mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
+        rows.insert(rows.begin(), mrows.begin(), mrows.end());
     }
 
     float label_col = 0.0f;
@@ -780,6 +863,8 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         t.key_col = kColGpu;
         t.value = {Span{s.gpu_model, kColValue, val_px}};
         t.wide = true;
+        t.wrap = true;              // 型号按磁贴可用宽度换行
+        t.model = s.gpu_model;
         push(std::move(t));
     }
     if (c.bat || c.power) {
@@ -834,16 +919,40 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     const float tile_h = inner_pad * 2.0f + key_h + line_gap + val_h + line_gap + sub_h;
     const float full_w = normal_w * 2.0f + tile_gap;
 
+    // 宽磁贴若带长名称，先按可用宽度切行，再算它自己的高度
+    for (Tile& t : tiles) {
+        if (t.wrap && !t.model.empty())
+            t.lines = wrap_text(f.M, t.model, val_px, full_w - inner_pad * 2.0f);
+    }
+    auto tile_height = [&](const Tile& t) {
+        const float nl = (t.wrap && !t.lines.empty()) ? static_cast<float>(t.lines.size()) : 1.0f;
+        float h = inner_pad * 2.0f + key_h + line_gap + nl * val_h + (nl - 1.0f) * line_gap;
+        if (t.has_sub)
+            h += line_gap + sub_h;
+        if (h < tile_h)
+            h = tile_h;   // 不足标准高度就补齐，保证观感一致
+        return h;
+    };
     auto place_tile = [&](const Tile& t, float tx, float ty, float tw) {
-        f.tiles.push_back(Rect{tx, ty, tx + tw, ty + tile_h});
+        const float th = tile_height(t);
+        f.tiles.push_back(Rect{tx, ty, tx + tw, ty + th});
         float by = ty + inner_pad + f.M.ascent(key_px);
         f.place(tx + inner_pad, by, std::vector<Span>{Span{t.key, t.key_col, key_px}});
-        by = ty + inner_pad + key_h + line_gap + f.M.ascent(val_px);
-        f.place(tx + inner_pad, by, t.value);
-        if (t.has_sub) {
-            by = ty + inner_pad + key_h + line_gap + val_h + line_gap + f.M.ascent(sub_px);
-            f.place(tx + inner_pad, by, std::vector<Span>{Span{t.sub, kColDim, sub_px}});
+        by = ty + inner_pad + key_h + line_gap;
+        if (t.wrap && !t.lines.empty()) {
+            for (const std::string& ln : t.lines) {
+                f.place(tx + inner_pad, by + f.M.ascent(val_px),
+                        std::vector<Span>{Span{ln, kColValue, val_px}});
+                by += val_h + line_gap;
+            }
+        } else {
+            f.place(tx + inner_pad, by + f.M.ascent(val_px), t.value);
+            by += val_h + line_gap;
         }
+        if (t.has_sub)
+            f.place(tx + inner_pad, by + f.M.ascent(sub_px),
+                    std::vector<Span>{Span{t.sub, kColDim, sub_px}});
+        return th;
     };
 
     float x = pad, y = pad;
@@ -855,8 +964,8 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
                 col = 0;
                 x = pad;
             }
-            place_tile(t, pad, y, full_w);
-            y += tile_h + tile_gap;
+            const float th = place_tile(t, pad, y, full_w);
+            y += th + tile_gap;
             col = 0;
             x = pad;
         } else {
@@ -892,8 +1001,8 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
                               Span{"fps", kColDim, big_unit_px}};
 
     std::vector<std::vector<Span>> stack;
-    if (c.gpu_model && !s.gpu_model.empty())
-        stack.push_back({Span{s.gpu_model, kColDim, stk_px}});
+    const std::string model_txt =
+        (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
     {
         std::vector<Span> l;
         if (c.gpu) {
@@ -959,6 +1068,15 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     float stack_w = 0.0f;
     for (const std::vector<Span>& l : stack)
         stack_w = std::max(stack_w, f.M.run_w(l));
+    if (!model_txt.empty()) {
+        // 型号放到栈顶，并按栈的自然宽度换行（不撑宽胶囊）
+        std::vector<std::vector<Span>> mlines;
+        for (const std::string& ln : wrap_name_to(f.M, model_txt, stk_px, stack_w))
+            mlines.push_back({Span{ln, kColDim, stk_px}});
+        stack.insert(stack.begin(), mlines.begin(), mlines.end());
+        for (const std::vector<Span>& l : stack)
+            stack_w = std::max(stack_w, f.M.run_w(l));
+    }
     const float n = static_cast<float>(stack.size());
     const float stack_total_h = n * stk_h + std::max(0.0f, n - 1.0f) * stk_line_gap;
     const float inner_h = std::max(left_col_h, stack_total_h);
@@ -1058,8 +1176,8 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     const float gutter = f.M.gsp(16.0f);
 
     std::vector<Row> left;
-    if (c.gpu_model && !s.gpu_model.empty())
-        left.push_back(Row{Span{"GPU", kColGpu, row_px}, {Span{s.gpu_model, kColValue, row_px}}, false});
+    const std::string model_txt =
+        (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
     if (c.gpu) {
         std::vector<Span> v;
         for (const Span& x : num_unit(s.gpu_pct >= 0 ? &s.gpu_pct : nullptr, "%", row_px, unit_px))
@@ -1169,6 +1287,21 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         right.push_back(Row{Span{"0.1%", kColLo, row_px}, num_unit_f(s.low01, "FPS", row_px, unit_px), false});
         if (c.low001)
             right.push_back(Row{Span{"0.01%", kColLo, row_px}, num_unit_f(s.low001, "FPS", row_px, unit_px), false});
+    }
+
+    if (!model_txt.empty()) {
+        float lw = f.M.measure("GPU", row_px);
+        float vw = 0.0f;
+        for (const Row& r : left) {
+            lw = std::max(lw, f.M.measure(r.label.text, row_px));
+            vw = std::max(vw, f.M.run_w(r.vals));
+        }
+        const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
+        std::vector<Row> mrows;
+        mrows.push_back(Row{Span{"GPU", kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        for (size_t i = 1; i < ml.size(); ++i)
+            mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
+        left.insert(left.begin(), mrows.begin(), mrows.end());
     }
 
     float left_bottom = pad, left_right = pad;
