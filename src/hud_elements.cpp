@@ -166,39 +166,52 @@ void HudElements::convert_colors(const struct overlay_params& params)
         return fc;
     };
 
-    HUDElements.colors.cpu = convert(params.cpu_color);
-    HUDElements.colors.gpu = convert(params.gpu_color);
-    HUDElements.colors.vram = convert(params.vram_color);
-    HUDElements.colors.ram = convert(params.ram_color);
-    HUDElements.colors.engine = convert(params.engine_color);
-    HUDElements.colors.io = convert(params.io_color);
-    HUDElements.colors.frametime = convert(params.frametime_color);
-    HUDElements.colors.background = convert(params.background_color);
-    HUDElements.colors.text = convert(params.text_color);
+    // FusionHUD 档位下用主题色覆盖参数色。
+    // 这样只要 fusion_full=1（或任一 fusion_* ）就能得到完整外观，
+    // 不依赖 preset=10..14 那条路径，也不会被用户残留的旧配色配置带偏。
+    const bool fusion_theme = fusionhud::isFusionActive(params);
+#define FH_COL(param, theme) (fusion_theme ? (theme) : (param))
+
+    HUDElements.colors.cpu = convert(FH_COL(params.cpu_color, fusionhud::kColCpu));
+    HUDElements.colors.gpu = convert(FH_COL(params.gpu_color, fusionhud::kColGpu));
+    HUDElements.colors.vram = convert(FH_COL(params.vram_color, fusionhud::kColVram));
+    HUDElements.colors.ram = convert(FH_COL(params.ram_color, fusionhud::kColRam));
+    HUDElements.colors.engine = convert(FH_COL(params.engine_color, fusionhud::kColFps));
+    HUDElements.colors.io = convert(FH_COL(params.io_color, fusionhud::kColDim));
+    HUDElements.colors.frametime = convert(FH_COL(params.frametime_color, fusionhud::kColGraph));
+    HUDElements.colors.background = convert(FH_COL(params.background_color, 0x000000u));
+    HUDElements.colors.text = convert(FH_COL(params.text_color, fusionhud::kColValue));
     HUDElements.colors.media_player = convert(params.media_player_color);
-    HUDElements.colors.wine = convert(params.wine_color);
-    HUDElements.colors.horizontal_separator = convert(params.horizontal_separator_color);
-    HUDElements.colors.battery = convert(params.battery_color);
-    HUDElements.colors.gpu_load_low = convert(params.gpu_load_color[0]);
-    HUDElements.colors.gpu_load_med = convert(params.gpu_load_color[1]);
-    HUDElements.colors.gpu_load_high = convert(params.gpu_load_color[2]);
-    HUDElements.colors.cpu_load_low = convert(params.cpu_load_color[0]);
-    HUDElements.colors.cpu_load_med = convert(params.cpu_load_color[1]);
-    HUDElements.colors.cpu_load_high = convert(params.cpu_load_color[2]);
-    HUDElements.colors.fps_value_low = convert(params.fps_color[0]);
-    HUDElements.colors.fps_value_med = convert(params.fps_color[1]);
-    HUDElements.colors.fps_value_high = convert(params.fps_color[2]);
+    HUDElements.colors.wine = convert(FH_COL(params.wine_color, fusionhud::kColDim));
+    HUDElements.colors.horizontal_separator = convert(FH_COL(params.horizontal_separator_color, fusionhud::kColLo));
+    HUDElements.colors.battery = convert(FH_COL(params.battery_color, fusionhud::kColBat));
+
+    // FusionHUD 的数值恒为 colValue（白），没有绿/黄/红分段
+    HUDElements.colors.gpu_load_low = convert(FH_COL(params.gpu_load_color[0], fusionhud::kColValue));
+    HUDElements.colors.gpu_load_med = convert(FH_COL(params.gpu_load_color[1], fusionhud::kColValue));
+    HUDElements.colors.gpu_load_high = convert(FH_COL(params.gpu_load_color[2], fusionhud::kColValue));
+    HUDElements.colors.cpu_load_low = convert(FH_COL(params.cpu_load_color[0], fusionhud::kColValue));
+    HUDElements.colors.cpu_load_med = convert(FH_COL(params.cpu_load_color[1], fusionhud::kColValue));
+    HUDElements.colors.cpu_load_high = convert(FH_COL(params.cpu_load_color[2], fusionhud::kColValue));
+    HUDElements.colors.fps_value_low = convert(FH_COL(params.fps_color[0], fusionhud::kColValue));
+    HUDElements.colors.fps_value_med = convert(FH_COL(params.fps_color[1], fusionhud::kColValue));
+    HUDElements.colors.fps_value_high = convert(FH_COL(params.fps_color[2], fusionhud::kColValue));
+
     HUDElements.colors.text_outline = convert(params.text_outline_color);
-    HUDElements.colors.network = convert(params.network_color);
+    HUDElements.colors.network = convert(FH_COL(params.network_color, fusionhud::kColFps));
 
     ImGuiStyle& style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_PlotLines] = convert(params.frametime_color);
-    style.Colors[ImGuiCol_PlotHistogram] = convert(params.frametime_color);
-    style.Colors[ImGuiCol_WindowBg]  = convert(params.background_color);
-    style.Colors[ImGuiCol_Text] = convert(params.text_color);
+    style.Colors[ImGuiCol_PlotLines] = convert(FH_COL(params.frametime_color, fusionhud::kColGraph));
+    style.Colors[ImGuiCol_PlotHistogram] = convert(FH_COL(params.frametime_color, fusionhud::kColGraph));
+    style.Colors[ImGuiCol_WindowBg]  = fusion_theme
+        ? ImVec4(0.0f, 0.0f, 0.0f, params.background_alpha)   // FusionHUD：纯黑底
+        : convert(params.background_color);
+    style.Colors[ImGuiCol_Text] = convert(FH_COL(params.text_color, fusionhud::kColValue));
     style.CellPadding.y = params.cellpadding_y * real_font_size.y;
-    style.WindowRounding = params.round_corners;
+    style.WindowRounding = fusion_theme ? fusionhud::kBgRadiusSp : params.round_corners;
     style.AntiAliasedLines = false;
+
+#undef FH_COL
 }
 
 void HudElements::convert_colors(bool do_conv, const struct overlay_params& params)
