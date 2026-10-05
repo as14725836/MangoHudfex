@@ -770,6 +770,14 @@ set_parameters_from_options(struct overlay_params *params)
       params->enabled[OVERLAY_PARAM_ENABLED_read_cfg] = read_cfg;
       params->enabled[OVERLAY_PARAM_ENABLED_time_no_label] = false;
       params->enabled[OVERLAY_PARAM_ENABLED_core_type] = false;
+      // FusionHUD 档位标志不参与 full 的"全开"：
+      // 否则五个档位同时为真，currentFusionSize() 会按优先级取错档
+      // （preset=10 / preset=14 都会渲染成 Tiles）。
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = false;
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] = false;
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = false;
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = false;
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = false;
       params->options.erase("full");
    }
    for (auto& it : params->options) {
@@ -1432,6 +1440,9 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
          for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::FULL))
             add_to_options(params, kv.first, kv.second);
+         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
+         // 会被复位冲掉，所以必须再经选项路径应用一次。
+         add_to_options(params, "fusion_full", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
          break;
 
@@ -1456,6 +1467,9 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
          for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::TILES))
             add_to_options(params, kv.first, kv.second);
+         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
+         // 会被复位冲掉，所以必须再经选项路径应用一次。
+         add_to_options(params, "fusion_tiles", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] = true;
          break;
 
@@ -1479,6 +1493,9 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
          for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::PILL))
             add_to_options(params, kv.first, kv.second);
+         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
+         // 会被复位冲掉，所以必须再经选项路径应用一次。
+         add_to_options(params, "fusion_pill", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = true;
          break;
 
@@ -1496,6 +1513,9 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
          for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MINIMAL))
             add_to_options(params, kv.first, kv.second);
+         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
+         // 会被复位冲掉，所以必须再经选项路径应用一次。
+         add_to_options(params, "fusion_minimal", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = true;
          break;
 
@@ -1530,6 +1550,9 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
          for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MEGA))
             add_to_options(params, kv.first, kv.second);
+         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
+         // 会被复位冲掉，所以必须再经选项路径应用一次。
+         add_to_options(params, "fusion_mega", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = true;
          break;
 
