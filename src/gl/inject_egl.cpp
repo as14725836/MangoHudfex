@@ -333,7 +333,7 @@ struct func_ptr {
    void *ptr;
 };
 
-static std::array<const func_ptr, 7> name_to_funcptr_map = {{
+static std::array<const func_ptr, 9> name_to_funcptr_map = {{
 #define ADD_HOOK(fn) { #fn, (void *) fn }
     ADD_HOOK(eglDestroyContext),
     ADD_HOOK(eglGetDisplay),
