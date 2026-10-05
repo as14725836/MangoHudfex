@@ -491,6 +491,7 @@ struct Frame {
     Rect graph;
     float content_w = 0.0f;
     float content_h = 0.0f;
+    std::string credit;   // 画面署名（自绘模式下由本渲染器负责显示）
 
     /** 放一段 run，返回结束 x */
     float place(float x, float baseline, const std::vector<Span>& spans) {
@@ -547,6 +548,33 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
     f.glyphs.push_back(g);
 
     f.content_h = footer_top + f.M.line_h(px) + pad * 0.5f;
+    f.content_w = std::max(f.content_w, pad + w + pad);
+}
+
+/**
+ * 画面底部的低调署名行。
+ *
+ * 为什么必须由自绘路径负责：`custom_text_center` 是 MangoHud 表格路径里的项
+ * （hud_elements.cpp 的 ordered_functions），而 FusionHUD 档位整块自绘、不再走表格，
+ * 于是署名行会消失。GPL-3.0 §7(b) 的附加署名条款要求它在应用内可见，
+ * 所以这里在面板底部统一补一行。
+ */
+inline void add_credit_line(Frame& f, float pad) {
+    if (f.credit.empty() || f.content_w <= 0.0f || f.content_h <= 0.0f)
+        return;
+    const float px = f.M.sp(9.5f);
+    const float w = f.M.measure(f.credit, px);
+    // 放在底部时钟下方，单独占一行，避免和时钟重叠
+    const float baseline = f.content_h + f.M.line_h(px) * 0.5f;
+    const float x = std::max(pad, (f.content_w - w) * 0.5f);
+    Glyph g;
+    g.x = x;
+    g.top = baseline - f.M.ascent(px);
+    g.px = px;
+    g.text = f.credit;
+    g.col = kColDim;
+    f.glyphs.push_back(g);
+    f.content_h += f.M.line_h(px) + pad * 0.5f;
     f.content_w = std::max(f.content_w, pad + w + pad);
 }
 
@@ -1393,6 +1421,9 @@ struct Options {
     float scale = 1.0f;          // hudScale（复用 params->font_scale）
     float outline = kOutlineDefault;
     ImFont* font = nullptr;
+    /** 画面署名文本；留空时用默认署名（见 build()）。
+     *  取自 params.custom_text_center，便于用户自定义。 */
+    std::string credit;
 };
 
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
@@ -1404,6 +1435,8 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.content_h = 0.0f;
     f.M.font = o.font;
     f.M.scale = o.scale;
+    // 留空时用默认署名，保证 §7(b) 的署名在任何配置下都在画面上
+    f.credit = o.credit.empty() ? std::string("FusionHUD by The412Banner") : o.credit;
 
     switch (size) {
         case FusionSize::FULL:    build_full(f, s, c); break;
@@ -1412,6 +1445,9 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
         case FusionSize::MINIMAL: build_minimal(f, s, c); break;
         case FusionSize::MEGA:    build_mega(f, s, c); break;
     }
+
+    // 署名行统一追加（自绘模式不再走表格，custom_text_center 需由这里负责）
+    add_credit_line(f, f.M.gsp(10.0f));
 }
 
 inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2 o, const Options& opt) {
