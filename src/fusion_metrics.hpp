@@ -20,9 +20,13 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <cstring>
+#include <cctype>
+#include <cstdio>
+#include <chrono>
 #include <fstream>
+#include <sstream>
 #include <algorithm>
-
 namespace fusionhud {
 
 // ================================================================
@@ -35,6 +39,7 @@ struct GpuProbeResult {
 };
 
 inline GpuProbeResult probeGpuUse(const std::string& vendor_prefix = "") {
+    (void)vendor_prefix; // 预留参数，当前实现按静态优先级表探测
     // 14 static paths in order of preference
     static const char* gpu_use_paths[] = {
         // Adreno KGSL (Qualcomm)
@@ -348,6 +353,209 @@ inline int tempColor(int celsius, int amber, int red) {
     if (amber > 0 && celsius >= amber)   return 0xFFFFAB5E; // FusionHUD amber
     if (celsius >= 80)                    return 0xFFFFAB5E; // default amber
     return 0xFF5EE08A; // FusionHUD green
+}
+
+// ================================================================
+// gpu.cpp 实际调用的 API
+// 说明：这些函数原先由 CI workflow 用 heredoc 在构建时注入，属于“影子代码”；
+//       现内置到源码，CI 注入逻辑可删除，构建结果可复现。
+//   gpuProbePaths / readGpuUtilization / readGpuTemperature /
+//   readGpuFrequency / detectVram
+// ================================================================
+struct GpuPaths {
+    std::string use;   // GPU 占用率节点（sysfs）
+    std::string freq;  // GPU 频率节点（sysfs）
+};
+
+// 返回第一个存在的 sysfs 节点；不存在返回空串
+inline std::string fhFirstExisting(const char* const* paths) {
+    for (int i = 0; paths[i]; ++i) {
+        std::ifstream f(paths[i]);
+        if (f.good()) return std::string(paths[i]);
+    }
+    return std::string();
+}
+
+// 探测一次即可，调用方（gpu.cpp 后台线程）应在循环外调用本函数
+inline GpuPaths gpuProbePaths() {
+    static const char* use_paths[] = {
+        "/sys/class/kgsl/kgsl-3d0/gpubusy",                // Adreno KGSL: "<busy> <total>"
+        "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",    // Adreno: "37 %"
+        "/sys/class/kgsl/kgsl-3d0/devfreq/gpu_load",
+        "/sys/class/misc/mali0/device/utilization",        // Mali
+        "/sys/class/devfreq/13000000.mali/device/gpuinfo",
+        "/sys/class/drm/card0/device/gpu_busy_percent",    // Xclipse / amdgpu
+        "/sys/class/devfreq/gpufreq/load",                 // 通用 devfreq
+        nullptr
+    };
+    static const char* freq_paths[] = {
+        "/sys/class/kgsl/kgsl-3d0/gpuclk",                 // Hz
+        "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq",
+        "/sys/class/devfreq/13000000.mali/cur_freq",
+        "/sys/class/drm/card0/device/hwmon/hwmon0/freq1_input",
+        nullptr
+    };
+    GpuPaths p;
+    p.use  = fhFirstExisting(use_paths);
+    p.freq = fhFirstExisting(freq_paths);
+    return p;
+}
+
+// 占用率：0..100，失败返回 -1
+inline int readGpuUtilization(const GpuPaths& p) {
+    if (p.use.empty()) return -1;
+    std::ifstream f(p.use);
+    if (!f.is_open()) return -1;
+    std::string line;
+    if (!std::getline(f, line)) return -1;
+
+    // 格式 1： "<busy> <total>"（KGSL gpubusy / Mali gpuinfo）
+    {
+        std::istringstream is(line);
+        long long busy = 0, total = 0;
+        std::string rest;
+        if ((is >> busy >> total) && total > 0 && !(is >> rest)) {
+            long long v = busy * 100 / total;
+            return (int)std::clamp<long long>(v, 0, 100);
+        }
+    }
+    // 格式 2： 单值 —— 可能带 '%'、可能是 0..1 小数、可能是 milli-percent
+    {
+        std::string s = line;
+        while (!s.empty() &&
+               (std::isspace(static_cast<unsigned char>(s.back())) || s.back() == '%'))
+            s.pop_back();
+        if (s.empty()) return -1;
+        try {
+            double d = std::stod(s);
+            if (line.find('%') == std::string::npos && d > 0.0 && d <= 1.0)
+                d *= 100.0;                       // 0..1 → 百分比
+            else if (d > 100.0 && d <= 10000.0)
+                d /= 100.0;                       // milli-percent → 百分比
+            return std::clamp(static_cast<int>(d), 0, 100);
+        } catch (...) { return -1; }
+    }
+}
+
+// 频率：返回 MHz，失败返回 -1.0
+inline double readGpuFrequency(const GpuPaths& p) {
+    if (p.freq.empty()) return -1.0;
+    std::ifstream f(p.freq);
+    if (!f.is_open()) return -1.0;
+    std::string line;
+    if (!std::getline(f, line)) return -1.0;
+    try {
+        double v = std::stod(line);
+        if (v > 1e7)       v /= 1e6;   // Hz  → MHz
+        else if (v > 1e4)  v /= 1e3;   // KHz → MHz
+        return v;
+    } catch (...) { return -1.0; }
+}
+
+// 温度：0..100 摄氏度，失败返回 -1
+// 优化：缓存命中的 thermal_zone 编号，避免每帧扫 0..59 号 zone（每帧上百次 open）
+inline int& fhTempZoneCache() { static int z = -1; return z; }
+
+inline int fhReadZoneTemp(int z) {
+    char vp[256];
+    std::snprintf(vp, sizeof(vp), "/sys/class/thermal/thermal_zone%d/temp", z);
+    std::ifstream vf(vp);
+    if (!vf.is_open()) return -1;
+    std::string line;
+    if (!std::getline(vf, line)) return -1;
+    try {
+        double t = std::stod(line);
+        if (t > 1000.0) t /= 1000.0;              // 毫摄氏度 → 摄氏度
+        if (t > 0.0 && t < 200.0) return static_cast<int>(t);
+    } catch (...) {}
+    return -1;
+}
+
+inline bool fhZoneIsGpu(int z) {
+    char tp[256];
+    std::snprintf(tp, sizeof(tp), "/sys/class/thermal/thermal_zone%d/type", z);
+    std::ifstream tf(tp);
+    if (!tf.is_open()) return false;
+    std::string type;
+    if (!std::getline(tf, type)) return false;
+    for (char& c : type) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    static const char* tokens[] = {
+        "gpuss", "gpu", "kgsl", "g3d", "mtktsgpu", "xclipse", "mali", "tsens", nullptr
+    };
+    for (int i = 0; tokens[i]; ++i)
+        if (type.find(tokens[i]) != std::string::npos) return true;
+    return false;
+}
+
+inline int readGpuTemperature() {
+    // 1) 先试缓存命中的 zone（热点路径）
+    int cached = fhTempZoneCache();
+    if (cached >= 0) {
+        int t = fhReadZoneTemp(cached);
+        if (t >= 0) return t;
+        fhTempZoneCache() = -1;                   // 缓存失效，重新扫描
+    }
+    // 2) 扫描 thermal_zone，找 type 含 GPU 关键字的
+    for (int z = 0; z < 60; ++z) {
+        if (!fhZoneIsGpu(z)) continue;
+        int t = fhReadZoneTemp(z);
+        if (t >= 0) { fhTempZoneCache() = z; return t; }
+    }
+    // 3) 退路：KGSL 自带温度节点
+    static const char* fallbacks[] = {
+        "/sys/class/kgsl/kgsl-3d0/temp",
+        "/sys/class/kgsl/kgsl-3d0/devfreq/temp",
+        nullptr
+    };
+    for (int i = 0; fallbacks[i]; ++i) {
+        std::ifstream f(fallbacks[i]);
+        if (!f.is_open()) continue;
+        std::string line;
+        if (!std::getline(f, line)) continue;
+        try {
+            double t = std::stod(line);
+            if (t > 1000.0) t /= 1000.0;
+            if (t > 0.0 && t < 200.0) return static_cast<int>(t);
+        } catch (...) {}
+    }
+    return -1;
+}
+
+struct VramInfo {
+    long long usedMB  = -1;
+    long long totalMB = -1;
+};
+
+inline VramInfo detectVram() {
+    VramInfo info;
+    // 1) KGSL mem_used（单位 KB）→ MB
+    {
+        std::ifstream f("/sys/class/kgsl/kgsl-3d0/mem_used");
+        if (f.is_open()) {
+            std::string l;
+            if (std::getline(f, l)) {
+                try { info.usedMB = std::stoll(l) / 1024; return info; } catch (...) {}
+            }
+        }
+    }
+    // 2) 退路：系统内存（Adreno 为 iGPU，无独立显存）
+    std::ifstream mi("/proc/meminfo");
+    if (mi.is_open()) {
+        std::string line;
+        long long total = -1, avail = -1;
+        while (std::getline(mi, line)) {
+            try {
+                if (line.rfind("MemTotal:", 0) == 0)          total = std::stoll(line.substr(9));
+                else if (line.rfind("MemAvailable:", 0) == 0) avail = std::stoll(line.substr(13));
+            } catch (...) {}
+            if (total > 0 && avail >= 0) break;
+        }
+        if (total > 0) {
+            info.totalMB = total / 1024;
+            if (avail >= 0) info.usedMB = (total - avail) / 1024;
+        }
+    }
+    return info;
 }
 
 } // namespace fusionhud
