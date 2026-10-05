@@ -44,6 +44,7 @@
 #include "fps_metrics.h"
 #include "version.h"
 #include "fusion_layout.hpp"
+#include "fusion_theme.hpp"
 
 std::unique_ptr<fpsMetrics> fpsmetrics;
 std::mutex config_mtx;
@@ -1427,18 +1428,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          add_to_options(params, "hud_compact", "1");
          add_to_options(params, "hud_no_margin", "1");
          add_to_options(params, "table_columns", "1");
-         add_to_options(params, "background_alpha", "0.8");
-         add_to_options(params, "round_corners", "12");
-         add_to_options(params, "font_size", "22");
-         add_to_options(params, "gpu_color", "5EE08A");
-         add_to_options(params, "cpu_color", "58A6FF");
-         add_to_options(params, "vram_color", "BC8CFF");
-         add_to_options(params, "ram_color", "FF8CBC");
-         add_to_options(params, "engine_color", "EB5B5B");
-         add_to_options(params, "io_color", "E07B85");
-         add_to_options(params, "battery_color", "FFD54F");
-         add_to_options(params, "text_color", "FFFFFF");
-         add_to_options(params, "background_color", "1A1D24");
+
+         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::FULL))
+            add_to_options(params, kv.first, kv.second);
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
          break;
 
@@ -1459,10 +1452,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          add_to_options(params, "hud_compact", "1");
          add_to_options(params, "table_columns", "2");
          add_to_options(params, "horizontal", "1");
-         add_to_options(params, "background_alpha", "0.8");
-         add_to_options(params, "round_corners", "12");
-         add_to_options(params, "font_size", "20");
-         add_to_options(params, "cellpadding_y", "0.1");
+
+         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::TILES))
+            add_to_options(params, kv.first, kv.second);
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] = true;
          break;
 
@@ -1482,10 +1475,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          add_to_options(params, "legacy_layout", "0");
          add_to_options(params, "hud_compact", "1");
          add_to_options(params, "table_columns", "1");
-         add_to_options(params, "background_alpha", "0.9");
-         add_to_options(params, "round_corners", "16");
-         add_to_options(params, "font_size", "21");
-         add_to_options(params, "cellpadding_y", "0.0");
+
+         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::PILL))
+            add_to_options(params, kv.first, kv.second);
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = true;
          break;
 
@@ -1499,9 +1492,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          add_to_options(params, "legacy_layout", "0");
          add_to_options(params, "hud_compact", "1");
          add_to_options(params, "table_columns", "1");
-         add_to_options(params, "background_alpha", "0.85");
-         add_to_options(params, "round_corners", "8");
-         add_to_options(params, "font_size", "18");
+
+         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MINIMAL))
+            add_to_options(params, kv.first, kv.second);
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = true;
          break;
 
@@ -1532,14 +1526,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          add_to_options(params, "legacy_layout", "0");
          add_to_options(params, "hud_compact", "1");
          add_to_options(params, "table_columns", "1");
-         add_to_options(params, "background_alpha", "0.85");
-         add_to_options(params, "round_corners", "14");
-         add_to_options(params, "font_size", "26");
-         add_to_options(params, "gpu_color", "5EE08A");
-         add_to_options(params, "cpu_color", "58A6FF");
-         add_to_options(params, "vram_color", "BC8CFF");
-         add_to_options(params, "ram_color", "FF8CBC");
-         add_to_options(params, "background_color", "1A1D24");
+
+         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MEGA))
+            add_to_options(params, kv.first, kv.second);
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = true;
          break;
 

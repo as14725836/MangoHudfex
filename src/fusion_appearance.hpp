@@ -27,6 +27,14 @@
 
 namespace fusionhud {
 
+/** packed ARGB → ImVec4（alpha 可再乘一个系数） */
+inline ImVec4 fusionVec4(uint32_t argb, float alpha_mul = 1.0f) {
+    return ImVec4(((argb >> 16) & 0xFF) / 255.0f,
+                  ((argb >>  8) & 0xFF) / 255.0f,
+                  ( argb        & 0xFF) / 255.0f,
+                  (((argb >> 24) & 0xFF) / 255.0f) * alpha_mul);
+}
+
 // ================================================================
 // HSV blend — matches Android Color.colorToHSV + lerp in HSV space
 // ================================================================
@@ -110,8 +118,8 @@ inline void setupAppearance(const overlay_params* params = nullptr) {
     ImGuiStyle& s = ImGui::GetStyle();
 
     // --- Window ---
-    s.WindowRounding    = 12.0f;   // FusionHUD card corner radius
-    s.WindowBorderSize  = 0.0f;    // no border
+    s.WindowRounding    = kBgRadiusSp;  // FusionHUD card corner radius (sp(8f))
+    s.WindowBorderSize  = 0.0f;         // 边框由 overlay_new_frame 按 accent 色推入
     s.WindowPadding     = ImVec2(8.0f, 6.0f);
     s.WindowMinSize     = ImVec2(1.0f, 1.0f);
 
@@ -127,13 +135,13 @@ inline void setupAppearance(const overlay_params* params = nullptr) {
     // --- Scrollbar (hidden for overlay) ---
     s.ScrollbarSize     = 0.0f;
 
-    // --- Colors ---
-    s.Colors[ImGuiCol_WindowBg]         = ImVec4(0.10f, 0.11f, 0.14f, 0.80f); // #1A1D24 CC
-    s.Colors[ImGuiCol_Border]           = ImVec4(0.13f, 0.17f, 0.24f, 0.40f); // outline
-    s.Colors[ImGuiCol_Text]             = ImVec4(0.95f, 0.96f, 0.98f, 1.00f); // #F2F5F9
-    s.Colors[ImGuiCol_TextDisabled]     = ImVec4(0.60f, 0.64f, 0.70f, 1.00f); // #9AA4B2
-    s.Colors[ImGuiCol_PlotLines]        = ImVec4(0.37f, 0.88f, 0.54f, 1.00f); // #5EE08A
-    s.Colors[ImGuiCol_PlotHistogram]    = ImVec4(0.37f, 0.88f, 0.54f, 0.70f);
+    // --- Colors（FusionHUD 精确值，见 fusion_theme.hpp）---
+    s.Colors[ImGuiCol_WindowBg]      = ImVec4(0.0f, 0.0f, 0.0f, kBgOpacityDefault); // 纯黑 × 0.8
+    s.Colors[ImGuiCol_Border]        = fusionVec4(kColAccent);                     // accent 描边
+    s.Colors[ImGuiCol_Text]          = fusionVec4(kColValue);                      // #F2F5F9
+    s.Colors[ImGuiCol_TextDisabled]  = fusionVec4(kColDim);                        // #9AA4B2
+    s.Colors[ImGuiCol_PlotLines]     = fusionVec4(kColGraph);                      // #5EE08A
+    s.Colors[ImGuiCol_PlotHistogram] = fusionVec4(kColGraph, 0.70f);
 
     // If user config provided, override with FusionHUD palette
     if (params) {
@@ -150,22 +158,22 @@ inline void drawFusionBackground() {
     ImVec2 pos = ImGui::GetWindowPos();
     ImVec2 size = ImGui::GetWindowSize();
 
-    // Background fill with rounded corners
+    // Background fill: 纯黑 × bgOpacity（上游 Color.argb(bgOpacity*255, 0, 0, 0)）
     dl->AddRectFilled(
         pos,
         ImVec2(pos.x + size.x, pos.y + size.y),
-        IM_COL32(0x1A, 0x1D, 0x24, 0xCC),  // #1A1D24 80% opacity
-        12.0f   // corner radius matching FusionHUD
+        IM_COL32(0x00, 0x00, 0x00, (int)(kBgOpacityDefault * 255.0f)),
+        kBgRadiusSp   // sp(8f)，与 FusionHUD 一致
     );
 
-    // Subtle outline
+    // accent 面板描边（宽度 = outlineIntensity * sp(3.5)）
     dl->AddRect(
         pos,
         ImVec2(pos.x + size.x, pos.y + size.y),
-        IM_COL32(0x22, 0x2B, 0x3E, 0x66),  // #222B3E 40% opacity
-        12.0f,
+        IM_COL32((kColAccent >> 16) & 0xFF, (kColAccent >> 8) & 0xFF, kColAccent & 0xFF, 0xFF),
+        kBgRadiusSp,
         0,
-        1.0f  // outline thickness
+        fusionOutlineWidth()
     );
 }
 
@@ -322,28 +330,37 @@ inline void applyFusionLayout(const overlay_params* params) {
 // Called from overlay_new_frame() every frame
 // ================================================================
 inline void applyFusionAppearance(const overlay_params& params) {
-    bool is_fusion = params.enabled[OVERLAY_PARAM_ENABLED_fusion_full] ||
-                     params.enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] ||
-                     params.enabled[OVERLAY_PARAM_ENABLED_fusion_pill] ||
-                     params.enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] ||
-                     params.enabled[OVERLAY_PARAM_ENABLED_fusion_mega];
-    if (!is_fusion) return;
+    if (!isFusionActive(params)) return;
 
     ImGuiStyle& s = ImGui::GetStyle();
-    s.Colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.11f, 0.14f, params.background_alpha);
 
-    if (params.enabled[OVERLAY_PARAM_ENABLED_fusion_pill] ||
-        params.enabled[OVERLAY_PARAM_ENABLED_fusion_minimal]) {
-        s.WindowPadding     = ImVec2(6.0f, 4.0f);
-        s.ItemSpacing       = ImVec2(4.0f, 1.0f);
-        s.ItemInnerSpacing  = ImVec2(3.0f, 1.0f);
-    } else if (params.enabled[OVERLAY_PARAM_ENABLED_fusion_tiles]) {
-        s.WindowPadding     = ImVec2(8.0f, 8.0f);
-        s.ItemSpacing       = ImVec2(8.0f, 6.0f);
+    // 背景：纯黑 × bgOpacity —— 上游 onDraw() 的 Color.argb(bgOpacity*255, 0, 0, 0)
+    s.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, params.background_alpha);
+
+    // 面板描边：强调色（AppThemeState 默认 0xFFA374FF），宽度由 overlay_new_frame 推入
+    s.Colors[ImGuiCol_Border] = ImVec4(((kColAccent >> 16) & 0xFF) / 255.0f,
+                                       ((kColAccent >>  8) & 0xFF) / 255.0f,
+                                       ( kColAccent        & 0xFF) / 255.0f,
+                                       1.0f);
+
+    // 圆角 sp(8f)（与 theme 的 round_corners 一致；convert_colors 每帧也会写，这里兜底）
+    s.WindowRounding = kBgRadiusSp;
+
+    // 内边距按档位收敛（FusionHUD 各档 pad 都是 10sp 起）
+    const FusionSize sz = currentFusionSize(params);
+    const FusionMetrics m = fusionMetrics(sz);
+    if (sz == FusionSize::PILL || sz == FusionSize::MINIMAL) {
+        s.WindowPadding    = ImVec2(6.0f, 4.0f);
+        s.ItemSpacing      = ImVec2(4.0f, 1.0f);
+        s.ItemInnerSpacing = ImVec2(3.0f, 1.0f);
+    } else if (sz == FusionSize::TILES) {
+        s.WindowPadding    = ImVec2(8.0f, 8.0f);
+        s.ItemSpacing      = ImVec2(8.0f, 6.0f);
     } else {
-        s.WindowPadding     = ImVec2(10.0f, 6.0f);
-        s.ItemSpacing       = ImVec2(6.0f, 4.0f);
+        s.WindowPadding    = ImVec2(10.0f, 6.0f);
+        s.ItemSpacing      = ImVec2(6.0f, 4.0f);
     }
+    (void)m;
 }
 
 } // namespace fusionhud

@@ -333,7 +333,12 @@ float get_time_stat(void *_data, int _idx)
 
 void overlay_new_frame(const struct overlay_params& params)
 {
-   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+   // FusionHUD 的面板边框：accent 色、宽度 = outlineIntensity * sp(3.5)。
+   // 非 FusionHUD 档位时保持 0，行为与原版一致。
+   const float fusion_border = fusionhud::isFusionActive(params)
+      ? fusionhud::fusionOutlineWidth(fusionhud::kOutlineDefault)
+      : 0.0f;
+   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, fusion_border);
    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(4,4));
    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8,-3));
    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, params.alpha);

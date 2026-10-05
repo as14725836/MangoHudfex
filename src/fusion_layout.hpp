@@ -22,39 +22,18 @@
 
 #pragma once
 #include "overlay_params.h"
+#include "fusion_theme.hpp"
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace fusionhud {
 
 // ================================================================
-// FusionHUD color palette (packed ARGB, matching FusionHudView.kt)
+// 5 layout presets —— 直接复用 fusion_theme.hpp 的 FusionSize，
+// 避免两处各定义一份枚举/调色板而漂移。
 // ================================================================
-enum FusionColors : uint32_t {
-    kColGpu         = 0xFF5EE08A,
-    kColCpu         = 0xFF58A6FF,
-    kColVram        = 0xFFC98BFF,
-    kColRam         = 0xFFFF7BC0,
-    kColBat         = 0xFFFFAB5E,
-    kColFps         = 0xFFFF6B6B,
-    kColGraph       = 0xFF5EE08A,
-    kColValue       = 0xFFF2F5F9,
-    kColDim         = 0xFF9AA4B2,
-    kColLo          = 0xFFE4E8EE,
-    kColBg          = 0xCC1A1D24,
-    kColOutline     = 0x66222B3E,
-};
-
-// ================================================================
-// 5 layout presets
-// ================================================================
-enum class FusionPreset {
-    FULL     = 0,
-    TILES    = 1,
-    PILL     = 2,
-    MINIMAL  = 3,
-    MEGA     = 4,
-};
+using FusionPreset = FusionSize;
 
 /**
  * Apply a FusionHUD layout preset to MangoHud config.
@@ -74,8 +53,8 @@ inline void applyPreset(overlay_params* params, int preset, bool inherit = false
     params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = false;
     params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega]    = false;
 
-    switch (static_cast<FusionPreset>(preset)) {
-    case FusionPreset::FULL:
+    switch (static_cast<FusionSize>(preset - kPresetBase)) {
+    case FusionSize::FULL:
         // Standard chip set: FPS+graph+0.01%low, GPU, GPU-temp, CPU,
         // VRAM, RAM, Power, Temp, Battery, GPU model, Engine, Clock
         params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
@@ -180,23 +159,40 @@ inline void applyPreset(overlay_params* params, int preset, bool inherit = false
         break;
     }
 
-    // Apply FusionHUD color scheme
-    params->gpu_color   = kColGpu;
-    params->cpu_color   = kColCpu;
-    params->vram_color  = kColVram;
-    params->ram_color   = kColRam;
-    params->battery_color = kColBat;
-    params->text_color  = kColValue;
-    params->engine_color = kColDim;
-    params->wine_color  = kColDim;
-    params->background_color = kColBg;
-    params->background_alpha = 0.8f;
-    params->round_corners    = 12.0f;
-    params->text_outline_color = kColOutline;
-    params->text_outline_thickness = 1.5f;
-    params->font_size     = 14.0f;
-    params->font_scale    = 1.0f;
-    params->alpha         = 1.0f;
+    // ---- FusionHUD 主题（唯一事实源 fusion_theme.hpp）----
+    // 这里直接写 params：本函数用于“强制套用”，可在配置解析之后再次调用。
+    params->gpu_color            = kColGpu;
+    params->cpu_color            = kColCpu;
+    params->vram_color           = kColVram;
+    params->ram_color            = kColRam;
+    params->battery_color        = kColBat;
+    params->engine_color         = kColFps;   // FPS / 引擎行
+    params->network_color        = kColFps;   // Mega 的 NET 行
+    params->frametime_color      = kColGraph; // 帧时间图
+    params->wine_color           = kColDim;
+    params->io_color             = kColDim;
+    params->text_color           = kColValue;
+    params->horizontal_separator_color = kColLo;
+
+    // 数值恒为白：三段阈值色统一
+    const unsigned white = kColValue;
+    params->gpu_load_color = { white, white, white };
+    params->cpu_load_color = { white, white, white };
+    params->fps_color      = { white, white, white };
+
+    // 面板：纯黑底 + 圆角 8（上游 sp(8f)），描边用强调色
+    params->background_color = 0x000000;
+    params->background_alpha = kBgOpacityDefault;
+    params->alpha            = 1.0f;
+    params->round_corners    = kBgRadiusSp;
+
+    // 上游没有文字描边，只有面板边框
+    params->enabled[OVERLAY_PARAM_ENABLED_text_outline] = false;
+
+    const FusionSize sz = static_cast<FusionSize>(preset - kPresetBase);
+    params->font_size  = fusionFontSize(sz);
+    params->font_scale = 1.0f;
+    params->cellpadding_y = fusionCellPaddingY(sz);
 }
 
 } // namespace fusionhud
