@@ -775,6 +775,14 @@ FusionHUD 外观默认使用**随包安装的 DejaVu Sans Mono Bold**
 - 环境变量 `MANGOHUD_FUSION_FONT=<字体路径>`：只影响 FusionHUD 外观。
 
 优先级：`font_file` > `MANGOHUD_FUSION_FONT` > 随包 DejaVu > Android 系统等宽字体 > 内嵌字体。
+- 显存在 Android/Adreno 上可能显示 `N/A`：`kgsl` 内核接口只提供
+  `gpu_busy_percentage` / `gpubusy` / `max_gpuclk` 等，**没有**显存计数节点
+  （`mem_used` / `mapped_mem` 实测不存在），所以 HUD 宁可显示 `N/A`，
+  也不再显示假的 `0.0 GiB`（FusionHUD 则直接不画这一行）。
+- 走 DRM 的驱动（`msm` / `freedreno` 等）会自动从 `/proc/<pid>/fdinfo` 读取
+  `drm-memory-vram` / `drm-memory-gtt`（与 `amdgpu` / `panfrost` 同一途径）。
+- 想让 Adreno 这类统一内存设备也显示数字：设 `MANGOHUD_VRAM_SHARED=1`，
+  用系统内存占用来代表显存（共享 RAM，数值有参考意义；桌面独显上会误导，故默认关闭）。
 
 字号（整个 FusionHUD 外观等比缩放）：设 `font_scale=1.2` 更大、`font_scale=0.9` 更小；默认已比上游基准放大 20%。
 

@@ -27,6 +27,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cstdlib>
+#include <dirent.h>
 namespace fusionhud {
 
 // ================================================================
@@ -529,6 +531,103 @@ struct VramInfo {
     long long totalMB = -1;
 };
 
+// 环境变量是否"打开"（未设置 / 空 / "0" 都算关闭）
+inline bool fhEnvOn(const char* name) {
+    const char* v = getenv(name);
+    if (!v || !*v) return false;
+    return !(v[0] == '0' && v[1] == '\0');
+}
+
+// 解析 fdinfo 里的内存值："1234 KiB" / "12 MiB" -> 字节
+inline long long fhParseFdinfoBytes(const std::string& val) {
+    std::istringstream is(val);
+    long long v = 0;
+    std::string unit;
+    if (!(is >> v)) return 0;
+    is >> unit;
+    if (unit == "KiB") return v * 1024LL;
+    if (unit == "MiB") return v * 1024LL * 1024;
+    if (unit == "GiB") return v * 1024LL * 1024 * 1024;
+    return v;  // 无单位按字节
+}
+
+// 从 /proc/self/fdinfo 读取 DRM 客户端的显存字段（Mesa/DRM 的官方途径）。
+// 返回 MB；读不到任何 drm-memory-* 字段时返回 -1。
+// 说明：kgsl 设备(/dev/kgsl-3d0)的 fdinfo 不输出这些字段，此时会返回 -1，
+//       不会误报 0。amdgpu/panfrost/msm(freedreno) 等走 DRM 的驱动才有。
+inline long long probeVramUsedViaFdinfoMB() {
+    DIR* d = opendir("/proc/self/fdinfo");
+    if (!d) return -1;
+
+    long long total = 0;
+    bool any = false;
+    std::vector<std::string> seen_clients;  // drm-client-id 去重（同一客户端多个 fd 会重复读）
+
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9')
+            continue;
+        std::ifstream f(std::string("/proc/self/fdinfo/") + e->d_name);
+        if (!f.is_open())
+            continue;
+
+        std::string driver, client;
+        long long bytes = 0;
+        for (std::string line; std::getline(f, line);) {
+            if (line.empty() || line[0] == ' ' || line[0] == '\t')
+                continue;
+            size_t colon = line.find(':');
+            if (colon == std::string::npos || colon + 1 >= line.size())
+                continue;
+            std::string key = line.substr(0, colon);
+            std::string val = line.substr(colon + 1);
+            while (!val.empty() && (val[0] == ' ' || val[0] == '\t'))
+                val.erase(val.begin());
+            if (key == "drm-driver")            driver = val;
+            else if (key == "drm-client-id")    client = val;
+            else if (key == "drm-memory-vram" || key == "drm-memory-gtt")
+                bytes += fhParseFdinfoBytes(val);
+        }
+
+        if (driver.empty()) continue;
+        // 只认 Adreno/freedreno 相关的 DRM 客户端
+        if (driver != "msm" && driver != "freedreno" && driver != "kgsl")
+            continue;
+        if (!client.empty()) {
+            if (std::find(seen_clients.begin(), seen_clients.end(), client) != seen_clients.end())
+                continue;
+            seen_clients.push_back(client);
+        }
+        if (bytes > 0) {
+            total += bytes;
+            any = true;
+        }
+    }
+    closedir(d);
+    return any ? total / 1024 / 1024 : -1;
+}
+
+// 统一内存设备（Adreno 等 iGPU）用"系统内存占用"代理显存。
+// 这些设备的显存就是共享的 RAM，所以数字有参考意义；桌面独显上会误导，
+// 因此默认关闭，须显式设置 MANGOHUD_VRAM_SHARED=1。
+inline bool probeSharedMemoryAsVramMB(long long& usedMB, long long& totalMB) {
+    std::ifstream mi("/proc/meminfo");
+    if (!mi.is_open()) return false;
+    std::string line;
+    long long total = -1, avail = -1;
+    while (std::getline(mi, line)) {
+        try {
+            if (line.rfind("MemTotal:", 0) == 0)           total = std::stoll(line.substr(9));
+            else if (line.rfind("MemAvailable:", 0) == 0)  avail = std::stoll(line.substr(13));
+        } catch (...) {}
+        if (total > 0 && avail >= 0) break;
+    }
+    if (total <= 0) return false;
+    totalMB = total / 1024;
+    if (avail >= 0) usedMB = (total - avail) / 1024;
+    return true;
+}
+
 inline VramInfo detectVram() {
     VramInfo info;
     // 1) KGSL mem_used（单位 KB）→ MB
@@ -556,10 +655,28 @@ inline VramInfo detectVram() {
             try { info.usedMB = std::stoll(l) / 1024; return info; } catch (...) {}
         }
     }
-    // 3) 探测不到就返回 -1（不可用）——注意：绝不能退回 /proc/meminfo 当显存，
-    //    那是系统内存，语义完全不同；而且 Android/Adreno 这类统一内存设备
-    //    本来就没有独立显存计数，假装有值只会让 HUD 显示假的 0 / 假数字。
-    //    调用方按 -1 处理：标准 HUD 显示 N/A，FusionHUD 直接不画这一行。
+    // 3) fdinfo：Mesa/DRM 的正式途径（MangoHud 的 amdgpu / panfrost 也是这么读的）。
+    //    扫本进程已打开的 DRM 客户端 fd，累加 drm-memory-vram / drm-memory-gtt。
+    //    kgsl 设备的 fdinfo 不输出这些字段 -> 返回 -1，继续往下走。
+    {
+        long long mb = probeVramUsedViaFdinfoMB();
+        if (mb >= 0) {
+            info.usedMB = mb;
+            return info;
+        }
+    }
+    // 4) 可选：把系统内存占用当作显存显示（统一内存设备才启用）。
+    if (fhEnvOn("MANGOHUD_VRAM_SHARED")) {
+        long long used = -1, total = -1;
+        if (probeSharedMemoryAsVramMB(used, total)) {
+            info.usedMB  = used;
+            info.totalMB = total;
+            return info;
+        }
+    }
+    // 5) 实在拿不到 -> 返回 -1（不可用）。
+    //    绝不"假装有值"：那会变成 HUD 上假的 0。调用方按 -1 处理：
+    //    标准 HUD 显示 N/A，FusionHUD 直接不画这一行。
     info.usedMB  = -1;
     info.totalMB = -1;
     return info;
