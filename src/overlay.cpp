@@ -758,6 +758,8 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
          // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
          fo.font = data.font_fusion ? data.font_fusion : ImGui::GetFont();
+         // 署名行文本（空则用默认署名 FusionHUD by The412Banner）
+         fo.credit = real_params->custom_text_center;
 
          fusionhud::fr::Frame fframe;
          fusionhud::fr::build(fframe,
