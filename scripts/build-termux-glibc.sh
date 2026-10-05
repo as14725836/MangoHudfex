@@ -9,7 +9,8 @@
 #
 # 可覆盖的环境变量：
 #   GLIBC_ROOT   Termux glibc 根（默认 /data/data/com.termux/files/usr/glibc）
-#   PREFIX       meson --prefix（默认按 GLIBC_ROOT 布局自动判断；详见下方注释）
+#   PREFIX       meson --prefix（默认 /usr；必须是绝对路径）
+#   LAYOUT       安装树布局：flat（默认，termux-glibc 扁平布局）或 usr
 #   LIBDIR       meson --libdir（默认 lib/mangohud）
 #   BUILDTYPE    release/debug（默认 release）
 #   NPROC        并行度（默认 nproc）
@@ -41,22 +42,31 @@ done
 
 DESTDIR_ABS="${REPO_ROOT}/${BUILD_DIR}/release"
 
-# ---- 安装前缀 ----------------------------------------------------------------
-# termux-glibc 是**扁平布局**：glibc 根下直接就是 lib/ bin/ share/，
-# 没有 usr/ 这一层。因此默认前缀为空串，安装树为 lib/mangohud、share/vulkan/… 。
-# 若显式设置了 PREFIX（含空串）则尊重之；否则按目标 GLIBC_ROOT 的既有布局判断：
-#   存在 <glibc>/usr/lib 且不存在 <glibc>/lib  → 用 /usr
-#   其余情况                                  → 用 ""（扁平）
-if [ -z "${PREFIX+x}" ]; then
-    if [ -d "$GLIBC_ROOT/usr/lib" ] && [ ! -d "$GLIBC_ROOT/lib" ]; then
-        PREFIX="/usr"
-    else
-        PREFIX=""
-    fi
-fi
+# ---- 安装前缀 / 安装树布局 ----------------------------------------------------
+# meson 要求 --prefix 必须是**绝对路径**，所以构建时一律用 /usr；
+# 最终安装树再按 LAYOUT 决定是否把 usr/ 这一层展开掉：
+#   flat（默认）：<root>/lib/mangohud、<root>/share/…、<root>/bin/…
+#                 ← termux-glibc 实际就是这个扁平布局（没有 usr 这一层）
+#   usr         ：<root>/usr/lib/mangohud、<root>/usr/share/…、<root>/usr/bin/…
+PREFIX="${PREFIX:-/usr}"
+: "${LAYOUT:=flat}"
+case "$LAYOUT" in
+    flat|usr) ;;
+    *)
+        echo "LAYOUT 只能是 flat 或 usr（当前: $LAYOUT）" >&2
+        exit 2
+        ;;
+esac
 
-LIBDIR_ABS="${PREFIX%/}/${LIBDIR}"          # 例如 /lib/mangohud（扁平）或 /usr/lib/mangohud
-LAYER_DIR="${PREFIX%/}/share/vulkan/implicit_layer.d"
+if [ "$LAYOUT" = "flat" ]; then
+    LIBDIR_ABS="/${LIBDIR}"
+    LAYER_DIR="/share/vulkan/implicit_layer.d"
+    BIN_DIR="/bin"
+else
+    LIBDIR_ABS="${PREFIX%/}/${LIBDIR}"
+    LAYER_DIR="${PREFIX%/}/share/vulkan/implicit_layer.d"
+    BIN_DIR="${PREFIX%/}/bin"
+fi
 
 log()  { printf '\033[1;92m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;93m[!]\033[0m %s\n' "$*" >&2; }
@@ -117,6 +127,18 @@ log "安装到 DESTDIR"
 rm -rf "$DESTDIR_ABS"
 DESTDIR="$DESTDIR_ABS" ninja -C "$BUILD_DIR" install
 
+# flat 布局：把 usr/ 这一层展开到安装树根部
+if [ "$LAYOUT" = "flat" ] && [ -d "$DESTDIR_ABS/usr" ]; then
+    log "展开 usr/ 层（flat 布局）"
+    for d in lib share bin; do
+        if [ -d "$DESTDIR_ABS/usr/$d" ]; then
+            mkdir -p "$DESTDIR_ABS/$d"
+            cp -a "$DESTDIR_ABS/usr/$d/." "$DESTDIR_ABS/$d/"
+        fi
+    done
+    rm -rf "$DESTDIR_ABS/usr"
+fi
+
 SHIM="$DESTDIR_ABS${LIBDIR_ABS}/libMangoHud_shim.so"
 [ -f "$SHIM" ] || die "未找到 $SHIM，安装布局与预期不符"
 
@@ -135,7 +157,7 @@ find "$DESTDIR_ABS${LAYER_DIR}" -name '*.json' -print0 2>/dev/null |
 # ---------------- 6. wrapper 检查 ----------------
 # wrapper 里的 shim 路径由脚本**运行时自定位**（bin/mangohud.in），
 # 因此这里不再改写它 —— 早先的 sed 会误伤自定位语句本身。
-WRAPPER="$DESTDIR_ABS${PREFIX%/}/bin/mangohud"
+WRAPPER="$DESTDIR_ABS${BIN_DIR}/mangohud"
 if [ -f "$WRAPPER" ]; then
     if grep -q 'MANGOHUD_LIB_NAME' "$WRAPPER"; then
         log "wrapper 就绪（shim 路径运行时自定位）"

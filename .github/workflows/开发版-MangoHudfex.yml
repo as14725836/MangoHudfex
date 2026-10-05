@@ -12,8 +12,9 @@ env:
   SRC_REPO: https://github.com/as14725836/MangoHudfex
   SRC_API_REPO: as14725836/MangoHudfex
   LAST_DEV_COMMIT_FILE: last_dev_mangohudfex_commit.txt
-  # termux-glibc 为扁平布局：glibc 根下直接是 lib/ share/ bin/
-  PREFIX: ""
+  # termux-glibc 为扁平布局：安装树展开掉 usr/，得到 <root>/lib、<root>/share、<root>/bin
+  PREFIX: /usr
+  LAYOUT: flat
   LIBDIR: lib/mangohud
 
 jobs:
