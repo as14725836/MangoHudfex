@@ -9,7 +9,7 @@
 #
 # 可覆盖的环境变量：
 #   GLIBC_ROOT   Termux glibc 根（默认 /data/data/com.termux/files/usr/glibc）
-#   PREFIX       meson --prefix（默认 /usr）
+#   PREFIX       meson --prefix（默认按 GLIBC_ROOT 布局自动判断；详见下方注释）
 #   LIBDIR       meson --libdir（默认 lib/mangohud）
 #   BUILDTYPE    release/debug（默认 release）
 #   NPROC        并行度（默认 nproc）
@@ -22,7 +22,6 @@ cd "$REPO_ROOT"
 
 # ---------------- 可配置项 ----------------
 GLIBC_ROOT="${GLIBC_ROOT:-/data/data/com.termux/files/usr/glibc}"
-PREFIX="${PREFIX:-/usr}"
 LIBDIR="${LIBDIR:-lib/mangohud}"
 BUILDTYPE="${BUILDTYPE:-release}"
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -40,9 +39,24 @@ for arg in "$@"; do
     esac
 done
 
-LIBDIR_ABS="${PREFIX%/}/${LIBDIR}"          # /usr/lib/mangohud
-LAYER_DIR="${PREFIX%/}/share/vulkan/implicit_layer.d"
 DESTDIR_ABS="${REPO_ROOT}/${BUILD_DIR}/release"
+
+# ---- 安装前缀 ----------------------------------------------------------------
+# termux-glibc 是**扁平布局**：glibc 根下直接就是 lib/ bin/ share/，
+# 没有 usr/ 这一层。因此默认前缀为空串，安装树为 lib/mangohud、share/vulkan/… 。
+# 若显式设置了 PREFIX（含空串）则尊重之；否则按目标 GLIBC_ROOT 的既有布局判断：
+#   存在 <glibc>/usr/lib 且不存在 <glibc>/lib  → 用 /usr
+#   其余情况                                  → 用 ""（扁平）
+if [ -z "${PREFIX+x}" ]; then
+    if [ -d "$GLIBC_ROOT/usr/lib" ] && [ ! -d "$GLIBC_ROOT/lib" ]; then
+        PREFIX="/usr"
+    else
+        PREFIX=""
+    fi
+fi
+
+LIBDIR_ABS="${PREFIX%/}/${LIBDIR}"          # 例如 /lib/mangohud（扁平）或 /usr/lib/mangohud
+LAYER_DIR="${PREFIX%/}/share/vulkan/implicit_layer.d"
 
 log()  { printf '\033[1;92m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;93m[!]\033[0m %s\n' "$*" >&2; }
@@ -118,14 +132,18 @@ log "修正 Vulkan 层清单路径 -> ${GLIBC_ROOT}${LIBDIR_ABS}/"
 find "$DESTDIR_ABS${LAYER_DIR}" -name '*.json' -print0 2>/dev/null |
     xargs -0 -r sed -i "s|\"library_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"library_path\" : \"${GLIBC_ROOT}${LIBDIR_ABS}/libMangoHud.so\"|"
 
-# ---------------- 6. 修正 wrapper 的 shim 路径 ----------------
-# 上游 bug：--libdir=lib/mangohud + -Dappend_libdir_mangohud=false 时，
-# meson 生成的 @ld_libdir_mangohud@ 是 "/usr/$LIB/"，丢掉 /mangohud，
-# 导致 LD_PRELOAD 指向 /usr/lib/libMangoHud_shim.so（不存在）。
+# ---------------- 6. wrapper 检查 ----------------
+# wrapper 里的 shim 路径由脚本**运行时自定位**（bin/mangohud.in），
+# 因此这里不再改写它 —— 早先的 sed 会误伤自定位语句本身。
 WRAPPER="$DESTDIR_ABS${PREFIX%/}/bin/mangohud"
 if [ -f "$WRAPPER" ]; then
-    log "修正 wrapper 的 LD_PRELOAD 路径"
-    sed -i "s|MANGOHUD_LIB_NAME=\"[^\"]*\"|MANGOHUD_LIB_NAME=\"${GLIBC_ROOT}${LIBDIR_ABS}/libMangoHud_shim.so\"|" "$WRAPPER"
+    if grep -q 'MANGOHUD_LIB_NAME' "$WRAPPER"; then
+        log "wrapper 就绪（shim 路径运行时自定位）"
+    else
+        warn "wrapper 中未找到 MANGOHUD_LIB_NAME，LD_PRELOAD 可能失效"
+    fi
+else
+    warn "未生成 wrapper：$WRAPPER"
 fi
 
 # ---------------- 7. 打包 ----------------

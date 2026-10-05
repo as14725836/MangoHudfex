@@ -22,8 +22,23 @@ import sys
 import glob
 
 GLIBC_ROOT = os.environ.get("GLIBC_ROOT", "/data/data/com.termux/files/usr/glibc")
-LIB_DIR = os.path.join(GLIBC_ROOT, "usr/lib/mangohud")
-LAYER_DIR = os.path.join(GLIBC_ROOT, "usr/share/vulkan/implicit_layer.d")
+def _pick_dir(*cands):
+    """返回第一个存在的目录；都不存在则返回第一个候选（便于报错时给出预期路径）。"""
+    for c in cands:
+        if os.path.isdir(c):
+            return c
+    return cands[0]
+
+
+# 扁平布局（<glibc>/lib/...）优先，回落 usr 布局（<glibc>/usr/lib/...）
+LIB_DIR = os.environ.get("MANGO_LIB_DIR") or _pick_dir(
+    os.path.join(GLIBC_ROOT, "lib/mangohud"),
+    os.path.join(GLIBC_ROOT, "usr/lib/mangohud"),
+)
+LAYER_DIR = os.environ.get("MANGO_LAYER_DIR") or _pick_dir(
+    os.path.join(GLIBC_ROOT, "share/vulkan/implicit_layer.d"),
+    os.path.join(GLIBC_ROOT, "usr/share/vulkan/implicit_layer.d"),
+)
 
 OK = "\033[1;92m[OK]\033[0m"
 BAD = "\033[1;91m[!!]\033[0m"
@@ -89,8 +104,9 @@ section("3. 层的运行期依赖")
 
 def find_lib(soname):
     pats = [
-        os.path.join(GLIBC_ROOT, "usr/lib", soname + "*"),
         os.path.join(GLIBC_ROOT, "lib", soname + "*"),
+        os.path.join(GLIBC_ROOT, "usr/lib", soname + "*"),
+        os.path.join(GLIBC_ROOT, "lib/aarch64-linux-gnu", soname + "*"),
         os.path.join(GLIBC_ROOT, "usr/lib/aarch64-linux-gnu", soname + "*"),
     ]
     for p in pats:
@@ -131,8 +147,8 @@ if libc:
 # ---------------------------------------------------------------- 4. loader
 section("4. Vulkan loader")
 loader = None
-for c in (os.path.join(GLIBC_ROOT, "usr/lib/libvulkan.so.1"),
-          os.path.join(GLIBC_ROOT, "lib/libvulkan.so.1")):
+for c in (os.path.join(GLIBC_ROOT, "lib/libvulkan.so.1"),
+          os.path.join(GLIBC_ROOT, "usr/lib/libvulkan.so.1")):
     if os.path.exists(c):
         loader = c
         break

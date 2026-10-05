@@ -12,8 +12,9 @@ env:
   SRC_REPO: https://github.com/as14725836/MangoHudfex
   SRC_API_REPO: as14725836/MangoHudfex
   LAST_DEV_COMMIT_FILE: last_dev_mangohudfex_commit.txt
-  MESON_PREFIX: /usr
-  MESON_LIBDIR: lib/mangohud
+  # termux-glibc 为扁平布局：glibc 根下直接是 lib/ share/ bin/
+  PREFIX: ""
+  LIBDIR: lib/mangohud
 
 jobs:
   build:
@@ -243,15 +244,15 @@ jobs:
               -C /data/data/com.termux/files/usr/glibc/
 
             # 2. 把 Vulkan 层清单里的库路径改到 Termux glibc 根
-            find /data/data/com.termux/files/usr/glibc/usr/share/vulkan -name '*.json' \
-              -exec sed -i 's#/usr/lib/mangohud#/data/data/com.termux/files/usr/glibc/usr/lib/mangohud#g' {} +
+            find /data/data/com.termux/files/usr/glibc/share/vulkan -name '*.json' \
+              -exec sed -i 's#/lib/mangohud#/data/data/com.termux/files/usr/glibc/lib/mangohud#g' {} +
 
             # 3. 使用（Vulkan：自动启用 implicit layer）
-            export VK_LAYER_PATH=/data/data/com.termux/files/usr/glibc/usr/share/vulkan/implicit_layer.d
+            export VK_LAYER_PATH=/data/data/com.termux/files/usr/glibc/share/vulkan/implicit_layer.d
             export MANGOHUD=1
 
             # 4. 或直接 LD_PRELOAD（OpenGL / 通用）
-            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/usr/lib/mangohud/libMangoHud.so
+            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/lib/mangohud/libMangoHud.so
             ```
 
             ### ⚠️ 注意事项

@@ -19,6 +19,21 @@
 
 默认 `GLIBC_ROOT=/data/data/com.termux/files/usr/glibc`，可用环境变量覆盖。
 
+**安装前缀会自动判断**：termux-glibc 是**扁平布局**（glibc 根下直接是 `lib/`、`bin/`、`share/`，
+没有 `usr/` 这一层），所以默认用空前缀，安装树为：
+
+```
+<glibc>/lib/mangohud/libMangoHud.so
+<glibc>/share/vulkan/implicit_layer.d/MangoHud.aarch64.json
+<glibc>/bin/mangohud
+```
+
+若目标是 `usr/` 布局（`<glibc>/usr/lib/...`），脚本会自动切到 `--prefix=/usr`；
+也可显式指定：`PREFIX=/usr ./scripts/build-termux-glibc.sh`。
+
+`bin/mangohud` 里的 shim 路径在**运行时按脚本自身位置自定位**（依次尝试 `../lib/mangohud`、
+`../usr/lib/mangohud` 等），因此两种布局都不会出现 `LD_PRELOAD` 指向不存在的文件。
+
 ## 2. 运行
 
 推荐用包装脚本，它会自动设置必需的环境变量：

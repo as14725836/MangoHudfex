@@ -13,8 +13,23 @@
 # ============================================================================
 
 GLIBC_ROOT="${GLIBC_ROOT:-/data/data/com.termux/files/usr/glibc}"
-MANGO_LIB_DIR="${MANGO_LIB_DIR:-$GLIBC_ROOT/usr/lib/mangohud}"
-MANGO_LAYER_DIR="${MANGO_LAYER_DIR:-$GLIBC_ROOT/usr/share/vulkan/implicit_layer.d}"
+# 自动适配两种布局：
+#   扁平： <glibc>/lib/mangohud          （termux-glibc 实际用的就是这种）
+#   usr ： <glibc>/usr/lib/mangohud
+if [ -z "${MANGO_LIB_DIR:-}" ]; then
+    for _c in "$GLIBC_ROOT/lib/mangohud" "$GLIBC_ROOT/usr/lib/mangohud"; do
+        [ -d "$_c" ] && { MANGO_LIB_DIR="$_c"; break; }
+    done
+    MANGO_LIB_DIR="${MANGO_LIB_DIR:-$GLIBC_ROOT/lib/mangohud}"
+fi
+
+if [ -z "${MANGO_LAYER_DIR:-}" ]; then
+    for _c in "$GLIBC_ROOT/share/vulkan/implicit_layer.d" \
+              "$GLIBC_ROOT/usr/share/vulkan/implicit_layer.d"; do
+        [ -d "$_c" ] && { MANGO_LAYER_DIR="$_c"; break; }
+    done
+    MANGO_LAYER_DIR="${MANGO_LAYER_DIR:-$GLIBC_ROOT/share/vulkan/implicit_layer.d}"
+fi
 
 # ---- 1. Vulkan 隐式层发现 ----------------------------------------------------
 # glibc 环境下 /usr/share 并不存在（真实路径在 GLIBC_ROOT 下），
