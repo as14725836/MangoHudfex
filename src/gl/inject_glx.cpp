@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <cstdlib>
 #include <spdlog/spdlog.h>
 #include "real_dlsym.h"
 #include "loaders/loader_glx.h"
@@ -170,6 +171,32 @@ static void do_imgui_swap(void *dpy, void *drawable)
                 break;
         }
 
+        // 尺寸兜底：某些 drawable（pixmap 等）查不到 GLX_WIDTH/HEIGHT，会返回 0。
+        // 用 0 去画会把 ImGui 的 DisplaySize 设成 0 → HUD 畸形/闪烁。
+        // 这里沿用上一次的有效尺寸；若仍无效则跳过本帧，不画坏的。
+        static unsigned int last_w = 0, last_h = 0;
+        if (width == 0 || height == 0) {
+            width = last_w;
+            height = last_h;
+        } else {
+            last_w = width;
+            last_h = height;
+        }
+        if (width == 0 || height == 0)
+            return;
+
+        // 诊断开关：MANGOHUD_GL_DEBUG=1（配合 MANGOHUD_LOG_LEVEL=info 即可看到）
+        static int gl_dbg = -1;
+        if (gl_dbg < 0) {
+            const char* e = getenv("MANGOHUD_GL_DEBUG");
+            gl_dbg = (e && *e && *e != '0') ? 1 : 0;
+        }
+        if (gl_dbg) {
+            GLint fbo = 0;
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+            SPDLOG_INFO("GL swap: drawable={} size={}x{} fbo={} ctx={}",
+                        drawable, width, height, fbo, ctx);
+        }
         SPDLOG_TRACE("swap buffers: {}x{}", width, height);
         imgui_render(gl_ctx, width, height);
     }
