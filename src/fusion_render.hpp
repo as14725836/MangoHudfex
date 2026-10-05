@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <string>
 #include <vector>
@@ -56,6 +57,33 @@ inline std::string fmt1(float v) {
     char b[48];
     std::snprintf(b, sizeof(b), "%.1f", static_cast<double>(v));
     return std::string(b);
+}
+
+/**
+ * 固定宽度数字格式化。
+ *
+ * 为什么必须固定宽度：面板尺寸由文本宽度算出，而 HUD 的数值每帧都在变
+ * （59.9 -> 9.8 少一位；3.2GiB -> 12.4GiB 多一位）。宽度一变窗口尺寸就跟着变，
+ * 表现就是面板边缘/内容"抖动"。用 %*.*f 补前导空格把字段占位固定下来，
+ * 面板尺寸随即恒定 —— 这也是 FusionHUD 每秒重建布局却不抖的原因。
+ */
+inline std::string fmt_i(int v, int width) {
+    char b[64];
+    std::snprintf(b, sizeof(b), "%*d", width, v);
+    return std::string(b);
+}
+
+inline std::string fmt_f(float v, int width, int prec = 1) {
+    char b[64];
+    std::snprintf(b, sizeof(b), "%*.*f", width, prec, static_cast<double>(v));
+    return std::string(b);
+}
+
+/** 无数据时的占位：补齐到同样宽度，避免占位符比数字窄而再次抖动 */
+inline std::string pad_dash(int width) {
+    if (width <= 1)
+        return std::string("—");
+    return std::string(static_cast<size_t>(width - 1), ' ') + "—";
 }
 
 inline int iround(float v) { return static_cast<int>(v + (v >= 0.0f ? 0.5f : -0.5f)); }
@@ -103,12 +131,19 @@ struct Tile {
 // 文本度量 —— 直接用 ImFont 的真实度量，保证与 ImGui 的 AddText 基线一致
 // ============================================================================
 
+/** 间距紧凑系数：只作用于 pad/gap，不改变字号。
+ *  FusionHUD 的 sp 会乘手机密度，直接照搬到 HUD 上显得过于空；0.75 收紧后更贴身。 */
+inline constexpr float kGapScale = 0.75f;
+
 struct Metrics {
     ImFont* font = nullptr;
     float spk = kSpToPx;   // sp → px 基准
     float scale = 1.0f;    // hudScale（本实现复用 params->font_scale）
 
     float sp(float v) const { return v * spk * scale; }
+
+    /** 间距专用：在 sp 基础上再乘紧凑系数（只用于 pad/gap，不影响字形尺寸） */
+    float gsp(float v) const { return v * spk * scale * kGapScale; }
 
     float measure(const std::string& t, float px) const {
         if (!font || t.empty())
@@ -130,8 +165,8 @@ struct Metrics {
         return font->Ascent * (px / font->FontSize);
     }
 
-    /** 行高：Android mono 的 descent-ascent ≈ 1.17em */
-    float line_h(float px) const { return px * 1.17f; }
+    /** 行高：Android mono 的 descent-ascent ≈ 1.17em；收到 1.10 更紧凑 */
+    float line_h(float px) const { return px * 1.10f; }
 };
 
 // ============================================================================
@@ -141,26 +176,31 @@ struct Metrics {
 inline Span gap(float unit_px) { return Span{"  ", kColDim, unit_px}; }
 
 inline std::vector<Span> num_unit(const int* v, const char* unit, float px, float unit_px) {
+    // MHz 是 4 位（2016），百分比是 3 位（87）—— 按用途给足固定占位宽度
+    const int width = (unit && std::strcmp(unit, "MHz") == 0) ? 4 : 3;
     if (!v || *v < 0)
-        return {Span{"—", kColDim, px}, Span{unit, kColDim, unit_px}};
-    return {Span{std::to_string(*v), kColValue, px}, Span{unit, kColDim, unit_px}};
+        return {Span{pad_dash(width), kColDim, px}, Span{unit, kColDim, unit_px}};
+    return {Span{fmt_i(*v, width), kColValue, px}, Span{unit, kColDim, unit_px}};
 }
 
 /** 浮点版本：<= 0 视为无数据（FusionHUD 的 lowText 语义） */
 inline std::vector<Span> num_unit_f(float v, const char* unit, float px, float unit_px) {
     if (!(v > 0.0f))
-        return {Span{"—", kColDim, px}, Span{unit, kColDim, unit_px}};
-    return {Span{fmt1(v), kColValue, px}, Span{unit, kColDim, unit_px}};
+        return {Span{pad_dash(5), kColDim, px}, Span{unit, kColDim, unit_px}};
+    return {Span{fmt_f(v, 5, 1), kColValue, px}, Span{unit, kColDim, unit_px}};
 }
 
 /** "3.2GiB" → 白色数字 + 灰色后缀 */
 inline std::vector<Span> value_unit(const std::string& t, float px, float unit_px) {
     if (t.empty())
         return {};
-    size_t i = 0;
+    size_t lead = 0;
+    while (lead < t.size() && t[lead] == ' ')
+        ++lead;   // 前导空格是数字字段的固定占位，保留在白色段里
+    size_t i = lead;
     while (i < t.size() && (std::isdigit(static_cast<unsigned char>(t[i])) || t[i] == '.' || t[i] == '-'))
         ++i;
-    if (i == 0 || i >= t.size())
+    if (i == lead || i >= t.size())
         return {Span{t, kColValue, px}};
     return {Span{t.substr(0, i), kColValue, px}, Span{t.substr(i), kColDim, unit_px}};
 }
@@ -168,10 +208,10 @@ inline std::vector<Span> value_unit(const std::string& t, float px, float unit_p
 inline std::vector<Span> temp_spans(int c, float px, float unit_px) {
     if (c < 0)
         return {};
-    return {Span{std::to_string(c), kColValue, px}, Span{"°C", kColDim, unit_px}};
+    return {Span{fmt_i(c, 3), kColValue, px}, Span{"°C", kColDim, unit_px}};
 }
 
-inline std::string gib(float v) { return fmt1(v) + "GiB"; }
+inline std::string gib(float v) { return fmt_f(v, 4, 1) + "GiB"; }
 
 // ============================================================================
 // 帧率历史 —— FusionHUD 的 AVG / 1% / 0.1% / 0.01% 低帧
@@ -493,6 +533,7 @@ inline void layout_column(Frame& f, const std::vector<Row>& rows, float x, float
     const float h = f.M.line_h(row_px);
     const float asc = f.M.ascent(row_px);
     float y = y0;
+    right = std::max(right, x + label_col + lv_gap);
     for (const Row& r : rows) {
         const float baseline = y - asc;
         f.place(x, baseline, std::vector<Span>{r.label});
@@ -509,9 +550,9 @@ inline void layout_column(Frame& f, const std::vector<Row>& rows, float x, float
 inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     const float row_px = f.M.sp(12.0f);
     const float unit_px = row_px * 0.62f;
-    const float pad = f.M.sp(10.0f);
-    const float line_gap = f.M.sp(4.0f);
-    const float lv_gap = f.M.sp(8.0f);
+    const float pad = f.M.gsp(10.0f);
+    const float line_gap = f.M.gsp(4.0f);
+    const float lv_gap = f.M.gsp(8.0f);
 
     std::vector<Row> rows;
     auto add = [&](const char* label, uint32_t lcol, std::vector<Span> vals) {
@@ -610,10 +651,11 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     const float h = f.M.line_h(row_px);
     const float asc = f.M.ascent(row_px);
     float y = pad;
-    float max_right = pad;
+    float max_right = pad + label_col + lv_gap;
     for (const Row& r : rows) {
         const float baseline = y - asc;
         f.place(pad, baseline, std::vector<Span>{r.label});
+        // 数值紧跟标签列左对齐（FusionHUD 原设计），不留多余空隙
         const float val_x = r.inline_row
             ? pad + f.M.measure(r.label.text, row_px) + lv_gap
             : pad + label_col + lv_gap;
@@ -626,7 +668,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         const float ft_px = unit_px * 1.15f;
         const float baseline = y - asc;
         f.place(pad, baseline, std::vector<Span>{Span{"Frametime", kColFps, ft_px}});
-        const std::string stat = "min:" + fmt1(s.ft_min) + " max:" + fmt1(s.ft_max);
+        const std::string stat = "min:" + fmt_f(s.ft_min, 5, 1) + " max:" + fmt_f(s.ft_max, 5, 1);
         const float stat_x = pad + std::max(label_col, f.M.measure("Frametime", ft_px)) + lv_gap;
         const float end = f.place(stat_x, baseline, std::vector<Span>{Span{stat, kColDim, unit_px}});
         max_right = std::max(max_right, end);
@@ -651,10 +693,10 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     const float val_px = f.M.sp(18.0f);
     const float sub_px = f.M.sp(10.0f);
     const float unit_px = f.M.sp(11.0f);
-    const float pad = f.M.sp(9.0f);
-    const float inner_pad = f.M.sp(8.0f);
-    const float tile_gap = f.M.sp(6.0f);
-    const float line_gap = f.M.sp(4.0f);
+    const float pad = f.M.gsp(9.0f);
+    const float inner_pad = f.M.gsp(8.0f);
+    const float tile_gap = f.M.gsp(6.0f);
+    const float line_gap = f.M.gsp(4.0f);
 
     std::vector<Tile> tiles;
     auto push = [&](Tile t) { tiles.push_back(std::move(t)); };
@@ -663,8 +705,9 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         Tile t;
         t.key = "FPS";
         t.key_col = kColFps;
-        t.value = {Span{fmt1(s.fps), kColValue, val_px}};
-        t.sub = fmt1(s.fps_avg) + " avg · " + (s.low1 > 0.0f ? fmt1(s.low1) : std::string("—")) + " 1%";
+        t.value = {Span{fmt_f(s.fps, 5, 1), kColValue, val_px}};
+        t.sub = fmt_f(s.fps_avg, 5, 1) + " avg · " +
+                (s.low1 > 0.0f ? fmt_f(s.low1, 5, 1) : pad_dash(5)) + " 1%";
         t.has_sub = true;
         push(std::move(t));
 
@@ -672,7 +715,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         fr.key = "FRAME";
         fr.key_col = kColDim;
         fr.value = num_unit_f(1000.0f / std::max(s.fps, 1.0f), "ms", val_px, unit_px);
-        fr.sub = fmt1(s.ft_min) + " – " + fmt1(s.ft_max);
+        fr.sub = fmt_f(s.ft_min, 5, 1) + " – " + fmt_f(s.ft_max, 5, 1);
         fr.has_sub = true;
         push(std::move(fr));
     }
@@ -682,9 +725,9 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         t.key_col = kColGpu;
         t.value = num_unit(s.gpu_pct >= 0 ? &s.gpu_pct : nullptr, "%", val_px, unit_px);
         if (c.gpu_temp && s.gpu_temp >= 0)
-            t.sub = std::to_string(s.gpu_temp) + "°C";
+            t.sub = fmt_i(s.gpu_temp, 3) + "°C";
         else if (s.gpu_mhz > 0)
-            t.sub = std::to_string(s.gpu_mhz) + "MHz";
+            t.sub = fmt_i(s.gpu_mhz, 4) + "MHz";
         t.has_sub = !t.sub.empty();
         push(std::move(t));
     }
@@ -695,11 +738,11 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         t.value = num_unit(s.cpu_pct >= 0 ? &s.cpu_pct : nullptr, "%", val_px, unit_px);
         std::string sub;
         if (c.cpu_temp && s.cpu_temp >= 0)
-            sub = std::to_string(s.cpu_temp) + "°C";
+            sub = fmt_i(s.cpu_temp, 3) + "°C";
         if (s.cpu_mhz > 0) {
             if (!sub.empty())
                 sub += " · ";
-            sub += std::to_string(s.cpu_mhz);
+            sub += fmt_i(s.cpu_mhz, 4);
         }
         t.sub = sub;
         t.has_sub = !sub.empty();
@@ -841,11 +884,12 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     const float big_px = f.M.sp(30.0f);
     const float big_unit_px = big_px * 0.36f;
     const float stk_px = f.M.sp(11.5f);
-    const float pad = f.M.sp(10.0f);
-    const float mid_gap = f.M.sp(12.0f);
-    const float stk_line_gap = f.M.sp(3.0f);
+    const float pad = f.M.gsp(10.0f);
+    const float mid_gap = f.M.gsp(12.0f);
+    const float stk_line_gap = f.M.gsp(3.0f);
 
-    std::vector<Span> left = {Span{fmt1(s.fps), kColValue, big_px}, Span{"fps", kColDim, big_unit_px}};
+    std::vector<Span> left = {Span{fmt_f(s.fps, 5, 1), kColValue, big_px},
+                              Span{"fps", kColDim, big_unit_px}};
 
     std::vector<std::vector<Span>> stack;
     if (c.gpu_model && !s.gpu_model.empty())
@@ -854,14 +898,14 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
         std::vector<Span> l;
         if (c.gpu) {
             l.push_back(Span{"GPU ", kColGpu, stk_px});
-            l.push_back(Span{s.gpu_pct >= 0 ? std::to_string(s.gpu_pct) : std::string("—"), kColGpu, stk_px});
+            l.push_back(Span{s.gpu_pct >= 0 ? fmt_i(s.gpu_pct, 3) : pad_dash(3), kColGpu, stk_px});
             l.push_back(Span{"%", kColGpu, stk_px});
         }
         if (c.cpu) {
             if (!l.empty())
                 l.push_back(Span{" · ", kColDim, stk_px});
             l.push_back(Span{"CPU ", kColCpu, stk_px});
-            l.push_back(Span{s.cpu_pct >= 0 ? std::to_string(s.cpu_pct) : std::string("—"), kColCpu, stk_px});
+            l.push_back(Span{s.cpu_pct >= 0 ? fmt_i(s.cpu_pct, 3) : pad_dash(3), kColCpu, stk_px});
             l.push_back(Span{"%", kColCpu, stk_px});
         }
         if (!l.empty())
@@ -869,7 +913,7 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.ram) {
         stack.push_back({Span{"RAM ", kColRam, stk_px},
-                         Span{s.ram_pct >= 0 ? std::to_string(s.ram_pct) : std::string("0"), kColRam, stk_px},
+                         Span{s.ram_pct >= 0 ? fmt_i(s.ram_pct, 3) : pad_dash(3), kColRam, stk_px},
                          Span{"%", kColRam, stk_px}});
     }
     if (c.bat || c.power) {
@@ -877,14 +921,14 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
         bool any = false;
         if (c.bat && s.bat_pct >= 0) {
             l.push_back(Span{"BAT ", kColBat, stk_px});
-            l.push_back(Span{std::to_string(s.bat_pct), kColBat, stk_px});
+            l.push_back(Span{fmt_i(s.bat_pct, 3), kColBat, stk_px});
             l.push_back(Span{"%", kColBat, stk_px});
             any = true;
         }
         if (c.power && s.bat_w > 0.0f) {
             if (any)
                 l.push_back(Span{" · ", kColDim, stk_px});
-            l.push_back(Span{fmt1(s.bat_w) + "W", kColDim, stk_px});
+            l.push_back(Span{fmt_f(s.bat_w, 4, 1) + "W", kColDim, stk_px});
             any = true;
         }
         if (any)
@@ -892,7 +936,7 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     }
     {
         std::vector<Span> l;
-        l.push_back(Span{fmt1(1000.0f / std::max(s.fps, 1.0f)) + "ms", kColDim, stk_px});
+        l.push_back(Span{fmt_f(1000.0f / std::max(s.fps, 1.0f), 5, 1) + "ms", kColDim, stk_px});
         if (c.vram && s.vram_used >= 0.0f) {
             l.push_back(Span{" · ", kColDim, stk_px});
             l.push_back(Span{gib(s.vram_used) + " vram", kColDim, stk_px});
@@ -947,18 +991,19 @@ inline void build_minimal(Frame& f, const Snapshot& s, const Chips& c) {
     const float big_px = f.M.sp(34.0f);
     const float big_unit_px = big_px * 0.32f;
     const float sub_px = f.M.sp(11.5f);
-    const float pad = f.M.sp(10.0f);
-    const float line_gap = f.M.sp(6.0f);
+    const float pad = f.M.gsp(10.0f);
+    const float line_gap = f.M.gsp(6.0f);
 
-    const std::vector<Span> big = {Span{fmt1(s.fps), kColValue, big_px}, Span{"fps", kColDim, big_unit_px}};
+    const std::vector<Span> big = {Span{fmt_f(s.fps, 5, 1), kColValue, big_px},
+                                   Span{"fps", kColDim, big_unit_px}};
     std::vector<Span> sub;
     sub.push_back(Span{"1% ", kColDim, sub_px});
-    sub.push_back(Span{s.low1 > 0.0f ? fmt1(s.low1) : std::string("—"), kColFps, sub_px});
+    sub.push_back(Span{s.low1 > 0.0f ? fmt_f(s.low1, 5, 1) : pad_dash(5), kColFps, sub_px});
     sub.push_back(Span{"  ·  0.1% ", kColDim, sub_px});
-    sub.push_back(Span{s.low01 > 0.0f ? fmt1(s.low01) : std::string("—"), kColFps, sub_px});
+    sub.push_back(Span{s.low01 > 0.0f ? fmt_f(s.low01, 5, 1) : pad_dash(5), kColFps, sub_px});
     if (c.low001) {
         sub.push_back(Span{"  ·  0.01% ", kColDim, sub_px});
-        sub.push_back(Span{s.low001 > 0.0f ? fmt1(s.low001) : std::string("—"), kColFps, sub_px});
+        sub.push_back(Span{s.low001 > 0.0f ? fmt_f(s.low001, 5, 1) : pad_dash(5), kColFps, sub_px});
     }
 
     const float big_w = f.M.run_w(big);
@@ -1007,10 +1052,10 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     const float row_px = f.M.sp(11.5f);
     const float unit_px = row_px * 0.62f;
     const float band_px = f.M.sp(9.5f);
-    const float pad = f.M.sp(10.0f);
-    const float line_gap = f.M.sp(3.5f);
-    const float lv_gap = f.M.sp(7.0f);
-    const float gutter = f.M.sp(16.0f);
+    const float pad = f.M.gsp(10.0f);
+    const float line_gap = f.M.gsp(3.5f);
+    const float lv_gap = f.M.gsp(7.0f);
+    const float gutter = f.M.gsp(16.0f);
 
     std::vector<Row> left;
     if (c.gpu_model && !s.gpu_model.empty())
@@ -1149,7 +1194,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         band.push_back({Span{"elapsed ", kColDim, band_px}, Span{session_string(), kColValue, band_px}});
 
     if (!band.empty()) {
-        y += f.M.sp(4.0f);
+        y += f.M.gsp(4.0f);
         const float max_w = std::max(max_right - pad, f.M.sp(180.0f));
         const float h = f.M.line_h(band_px);
         const float asc = f.M.ascent(band_px);
@@ -1176,7 +1221,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     }
 
     if (c.graph) {
-        y += f.M.sp(3.0f);
+        y += f.M.gsp(3.0f);
         const float gh = f.M.sp(kGraphHeightSp);
         const float gr = std::max(max_right, pad + f.M.sp(220.0f));
         f.graph = Rect{pad, y, gr, y + gh};
@@ -1188,14 +1233,14 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     const std::string dx_line = dx_version_labeled(s);
     const bool has_dx = c.engine && !dx_line.empty();
     if (has_dx) {
-        y += f.M.sp(4.0f);
+        y += f.M.gsp(4.0f);
         const float end = f.place(pad, y + f.M.ascent(band_px),
                                   std::vector<Span>{Span{dx_line, kColDim, band_px}});
         max_right = std::max(max_right, end);
         y += f.M.line_h(band_px);
     }
     if (c.wine && !s.driver.empty()) {
-        y += has_dx ? f.M.sp(1.0f) : f.M.sp(4.0f);
+        y += has_dx ? f.M.gsp(1.0f) : f.M.gsp(4.0f);
         const float end = f.place(pad, y + f.M.ascent(band_px),
                                   std::vector<Span>{Span{s.driver, kColDim, band_px}});
         max_right = std::max(max_right, end);
@@ -1264,9 +1309,17 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
         a = std::min(std::max(a, 8.0f), 40.0f);
         const uint32_t tc = (static_cast<uint32_t>(std::lround(a)) << 24) | 0x00FFFFFFu;
         const float tr = f.M.sp(kTileRadiusSp);
-        for (const Rect& t : f.tiles)
-            dl->AddRectFilled(ImVec2(o.x + t.x0, o.y + t.y0), ImVec2(o.x + t.x1, o.y + t.y1),
-                              to_imcol(tc), tr);
+        // 磁贴加一圈极淡的白描边：网格边界更清晰，观感更精致
+        const uint32_t tb = (static_cast<uint32_t>(
+                                 std::lround(std::min(0.20f, bg_a * 0.22f) * 255.0f))
+                             << 24) |
+                            0x00FFFFFFu;
+        for (const Rect& t : f.tiles) {
+            const ImVec2 q0(o.x + t.x0, o.y + t.y0);
+            const ImVec2 q1(o.x + t.x1, o.y + t.y1);
+            dl->AddRectFilled(q0, q1, to_imcol(tc), tr);
+            dl->AddRect(q0, q1, to_imcol(tb), tr, 0, 1.0f);
+        }
     }
 
     // 文本
@@ -1294,6 +1347,15 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
                 pts.push_back(ImVec2(o.x + f.graph.x0 + static_cast<float>(i) * step,
                                      o.y + f.graph.y1 - t * f.graph.h()));
             }
+            // 图区底衬：极淡的绿底 + 描边，比裸线更易读
+            const ImVec2 g0(o.x + f.graph.x0, o.y + f.graph.y0);
+            const ImVec2 g1(o.x + f.graph.x1, o.y + f.graph.y1);
+            const float gr_r = f.M.sp(3.0f);
+            dl->AddRectFilled(g0, g1, to_imcol(0x14000000u | (kColGraph & 0x00FFFFFFu)), gr_r);
+            dl->AddRect(g0, g1, to_imcol(0x1EFFFFFFu), gr_r, 0, 1.0f);
+            // 外发光 + 实线：先粗描一层低透明度，再叠细实线
+            dl->AddPolyline(pts.data(), static_cast<int>(pts.size()),
+                            to_imcol(0x46000000u | (kColGraph & 0x00FFFFFFu)), false, f.M.sp(3.4f));
             dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), to_imcol(kColGraph), false,
                             f.M.sp(1.6f));
         }
