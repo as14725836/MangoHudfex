@@ -1036,7 +1036,73 @@ void init_system_info(){
          }
       }
       else {
+           // —— 兜底探测 Wine 版本 ——
+           // 上游只认 wine-preloader / wine64-preloader 这种命名；在 Termux +
+           // box64 / FEX-Emu 环境里进程名往往是 box64 或 wine，此时上面的分支不会
+           // 命中，wineVersion 会一直是空。这里按优先级多路尝试：
+           //   1) 进程自身就是 wine/wine64
+           //   2) /proc/self/cmdline 里带 wine 的绝对路径（box64 把 wine 当参数）
+           //   3) wine 可执行文件同目录下的 wine64 / wine
+           //   4) WINELOADER / WINE 环境变量
+           //   5) PATH 里的 wine64 / wine
            wineVersion = "";
+           bool own_is_wine = (preloader == "wine" || preloader == "wine64" ||
+                               preloader == "wine-preloader" || preloader == "wine64-preloader");
+
+           std::vector<std::string> cands;
+           if (own_is_wine)
+              cands.push_back(wineProcess);
+
+           {
+              std::ifstream cf("/proc/self/cmdline", std::ios::binary);
+              std::string tok;
+              char ch;
+              while (cf.get(ch)) {
+                 if (ch == '\0') {
+                    if (!tok.empty() && tok[0] == '/' &&
+                        tok.find("wine") != std::string::npos)
+                       cands.push_back(tok);
+                    tok.clear();
+                 } else {
+                    tok += ch;
+                 }
+              }
+              if (!tok.empty() && tok[0] == '/' && tok.find("wine") != std::string::npos)
+                 cands.push_back(tok);
+           }
+
+           {
+              char *dir = dirname((char*)wineProcess.c_str());
+              if (dir) {
+                 cands.push_back(std::string(dir) + "/wine64");
+                 cands.push_back(std::string(dir) + "/wine");
+              }
+           }
+
+           for (const char *e : {"WINELOADER", "WINE"}) {
+              const char *v = getenv(e);
+              if (v && *v)
+                 cands.push_back(v);
+           }
+           cands.push_back("wine64");
+           cands.push_back("wine");
+
+           const char *wine_env = getenv("WINELOADERNOEXEC");
+           if (wine_env)
+              unsetenv("WINELOADERNOEXEC");
+           for (const std::string& cand : cands) {
+              std::stringstream findVersion;
+              findVersion << "\"" << cand << "\" --version";
+              std::string v = exec(findVersion.str());
+              trim(v);
+              if (!v.empty() && v.find("not found") == std::string::npos) {
+                 wineVersion = v;
+                 break;
+              }
+           }
+           if (wine_env)
+              setenv("WINELOADERNOEXEC", wine_env, 1);
+           SPDLOG_DEBUG("WINE version (fallback): {}", wineVersion);
       }
 
       check_for_vkbasalt_and_gamemode();
