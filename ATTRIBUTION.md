@@ -1,5 +1,13 @@
 # Attribution / 致谢
 
+## 随包字体
+
+本仓库随包分发 **DejaVu Sans Mono Bold**（`data/fonts/DejaVuSansMono-Bold.ttf`），
+作为 FusionHUD 外观的默认等宽字体。许可证全文见 `data/fonts/LICENSE-DejaVu.txt`
+（Bitstream Vera / DejaVu 字体许可：允许再分发与嵌入，保留声明即可）。
+
+> DejaVu Fonts — <https://dejavu-fonts.github.io/> — Bitstream Vera License（宽松、可再分发）
+
 本仓库 **MangoHudfex** 包含并移植了第三方作品。以下署名依各自许可条款保留。
 
 ---

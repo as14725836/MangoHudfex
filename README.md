@@ -762,5 +762,17 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
 | `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
 
+### 字体
+
+FusionHUD 外观默认使用**随包安装的 DejaVu Sans Mono Bold**
+（`share/mangohud/fonts/DejaVuSansMono-Bold.ttf`），并按 sp(34) / sp(18) / sp(12)
+三档分别烘焙字体图集，绘制时只缩不放 —— 大号 FPS 与常规行都保持清晰。
+想换字体：
+
+- `font_file=<字体路径>`：同时影响其余 HUD 模式；
+- 环境变量 `MANGOHUD_FUSION_FONT=<字体路径>`：只影响 FusionHUD 外观。
+
+优先级：`font_file` > `MANGOHUD_FUSION_FONT` > 随包 DejaVu > Android 系统等宽字体 > 内嵌字体。
+
 分叉新增的其它开关：`hide_engine_names`、`hide_fps_superscript`、`inherit`、`dx_api`，
 含义与上游同名字段一致；`dx_api` 用于选择 DXVK / VKD3D / Zink 的显示口径。

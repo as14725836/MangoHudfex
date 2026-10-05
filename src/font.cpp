@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstdlib>
 #include "overlay.h"
 #include "file_utils.h"
 #include "font_default.h"
@@ -6,7 +7,43 @@
 #include "forkawesome.h"
 #include "fusion_theme.hpp"
 
-void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*& small_font, ImFont*& text_font, ImFont*& secondary_font, ImFont*& fusion_font)
+/**
+ * 解析 FusionHUD 专用字体文件。
+ * 顺序：用户显式设置的 font_file → MANGOHUD_FUSION_FONT → 随包安装的
+ * DejaVu Sans Mono Bold → 桌面发行版 DejaVu → Android 系统等宽字体。
+ * 全都找不到时返回空串，由调用方回退到内嵌字体。
+ */
+static std::string fusion_font_path(const overlay_params& params) {
+   if (!params.font_file.empty() && file_exists(params.font_file))
+      return params.font_file;   // 用户在配置里指定了字体，尊重其选择
+
+   if (const char* env = std::getenv("MANGOHUD_FUSION_FONT")) {
+      if (*env && file_exists(env))
+         return env;
+   }
+
+   static const char* kCandidates[] = {
+      // 随包安装（termux-glibc 扁平布局 / usr 布局 / 通用前缀）
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
+      "/data/data/com.termux/files/usr/glibc/usr/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
+      "/data/data/com.termux/files/usr/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
+      "/usr/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
+      "/usr/local/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
+      // 桌面发行版常见的 DejaVu
+      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+      // Android 系统等宽字体
+      "/system/fonts/DroidSansMono.ttf",
+      "/system/fonts/RobotoMono-Regular.ttf",
+      "/system/fonts/NotoSansMono-Regular.ttf",
+   };
+   for (const char* p : kCandidates) {
+      if (file_exists(p))
+         return p;
+   }
+   return std::string();
+}
+
+void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*& small_font, ImFont*& text_font, ImFont*& secondary_font, FusionFonts& fusion)
 {
    auto& io = ImGui::GetIO();
    if (!font_atlas)
@@ -77,17 +114,15 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    bool secondary_same_size = (font_size == font_size_secondary);
 
    // ---- FusionHUD 专用字体 ----
-   // ImGui 把字体按固定尺寸烘焙进图集，用**比图集更大**的尺寸绘制就会明显模糊。
-   // FusionHUD 的大号 FPS 是 sp(34) ≈ 51px，远大于主字体（默认 24），
-   // 所以这里按"FusionHUD 用到的最大字号"单独烘焙一个字体，
-   // 供 fusion_render.hpp 的所有字号使用 —— 全程都变成缩绘，因此清晰。
-   ImFontConfig fusion_config;
-   fusion_config.OversampleH = 2;
-   fusion_config.OversampleV = 1;
-   fusion_config.PixelSnapH = true;   // 字形前进取整，位置更锐利
-
-   // FusionHUD 只会画 ASCII + ° · — ↓；刻意**不**跟随 font_glyph_ranges，
-   // 否则在 51px 下加 CJK 会让字体图集体积爆炸。
+   // ImGui 把字体按固定尺寸烘焙进图集：放大绘制 = 位图放大（发虚），
+   // 缩小绘制 = 无 mipmap 的降采样（变软）。FusionHUD 的字号跨度很大
+   // （约 14~51px），所以按三档分别烘焙，绘制时挑"不小于目标字号"的那一档，
+   // 做到全程只缩不放 —— 既清晰又保留大号 FPS 的冲击力。
+   //
+   // 字体优先用随包安装的 DejaVu Sans Mono Bold（现代等宽粗体，观感接近
+   // FusionHUD 原版的 Monospace Bold）；找不到再退回内嵌字体。
+   // 刻意**不**跟随 font_glyph_ranges：在 51px 下加 CJK 会让图集体积爆炸，
+   // 而 FusionHUD 只会画 ASCII + ° · — ↓。
    static const ImWchar fusion_ranges[] = {
       0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
       0x2013, 0x2014,   // – —
@@ -95,18 +130,39 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       0,
    };
 
-   float fusion_size = fusionhud::kMaxTextSp * fusionhud::kSpToPx *
-                       (params.font_scale > 0.0f ? params.font_scale : 1.0f);
-   if (fusion_size < font_size)
-      fusion_size = font_size;
-   if (fusion_size > 96.0f)
-      fusion_size = 96.0f;
+   ImFontConfig fusion_config;
+   fusion_config.OversampleH = 2;
+   fusion_config.OversampleV = 1;
+   fusion_config.PixelSnapH = true;   // 字形前进取整，位置更锐利
+
+   const float fusion_scale = params.font_scale > 0.0f ? params.font_scale : 1.0f;
+   auto bake_size = [&](float sp_value) {
+      float px = sp_value * fusionhud::kSpToPx * fusion_scale;
+      if (px < font_size)
+         px = font_size;
+      if (px > 96.0f)
+         px = 96.0f;
+      return px;
+   };
+   const float size_big = bake_size(fusionhud::kMaxTextSp);
+   const float size_mid = bake_size(fusionhud::kMidTextSp);
+   const float size_small = bake_size(fusionhud::kSmallTextSp);
+
+   const std::string fusion_ttf = fusion_font_path(params);
+   auto bake_fusion = [&](float px) -> ImFont* {
+      if (!fusion_ttf.empty())
+         return font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), px, &fusion_config, fusion_ranges);
+      return font_atlas->AddFontFromMemoryCompressedBase85TTF(
+         GetDefaultCompressedFontDataTTFBase85(), px, &fusion_config, fusion_ranges);
+   };
 
    // ImGui takes ownership of the data, no need to free it
    if (!params.font_file.empty() && file_exists(params.font_file)) {
       font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size, nullptr, same_font && text_same_size ? glyph_ranges.Data : default_range);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
-      fusion_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), fusion_size, &fusion_config, fusion_ranges);
+      fusion.small = bake_fusion(size_small);
+      fusion.mid = bake_fusion(size_mid);
+      fusion.big = bake_fusion(size_big);
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {
@@ -123,7 +179,9 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       const char* ttf_compressed_base85 = GetDefaultCompressedFontDataTTFBase85();
       font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size, nullptr, default_range);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
-      fusion_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, fusion_size, &fusion_config, fusion_ranges);
+      fusion.small = bake_fusion(size_small);
+      fusion.mid = bake_fusion(size_mid);
+      fusion.big = bake_fusion(size_big);
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {

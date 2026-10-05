@@ -756,7 +756,11 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.scale = real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f;
          // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
          // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
-         fo.font = data.font_fusion ? data.font_fusion : ImGui::GetFont();
+         // 三档字体（见 font.cpp）：ImGui 放大绘制会发虚、缩小绘制会变软，
+         // 按尺寸挑档才能既清晰又好看。
+         fo.font = data.font_fusion.big ? data.font_fusion.big : ImGui::GetFont();
+         fo.font_mid = data.font_fusion.mid ? data.font_fusion.mid : fo.font;
+         fo.font_small = data.font_fusion.small ? data.font_fusion.small : fo.font;
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 

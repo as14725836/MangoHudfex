@@ -121,9 +121,13 @@ inline FusionMetrics fusionMetrics(FusionSize s) {
     return {12.0f, 0.62f, 10.0f, 4.0f, 8.0f, 10.0f, 18.0f, 10.0f, 0.0f, 0.0f};
 }
 
-/** FusionHUD 用到的最大字号（sp 单位）：Minimal 档的大号 FPS = sp(34f)。
- *  font.cpp 用它来决定专用字体的烘焙尺寸（ImGui 放大绘制会模糊）。 */
+/** FusionHUD 用到的字号（sp 单位）。font.cpp 按这三档分别烘焙专用字体，
+ *  绘制时挑“不小于目标字号”的那一档 —— 只缩不放，最清晰。
+ *  大：Minimal 的大号 FPS = sp(34)≈51px；中：Tiles 的数值 = sp(18)≈27px；
+ *  小：常规行 / 单位 / 时钟 = sp(12)≈18px。 */
 constexpr float kMaxTextSp = 34.0f;
+constexpr float kMidTextSp = 18.0f;
+constexpr float kSmallTextSp = 12.0f;
 
 /**
  * sp → MangoHud font_size 的换算系数。

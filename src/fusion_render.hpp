@@ -205,9 +205,28 @@ struct Tile {
 inline constexpr float kGapScale = 0.75f;
 
 struct Metrics {
-    ImFont* font = nullptr;
+    ImFont* font = nullptr;        // 大号
+    ImFont* font_mid = nullptr;    // 中号
+    ImFont* font_small = nullptr;  // 小号
     float spk = kSpToPx;   // sp → px 基准
     float scale = 1.0f;    // hudScale（本实现复用 params->font_scale）
+
+    /**
+     * 按目标字号挑字体：返回"不小于 px 的最小一档"，即只缩不放。
+     * 三档烘焙后绝大多数文字都落在 1:1 或轻微缩小上，比单档放大清晰得多。
+     */
+    ImFont* pick(float px) const {
+        ImFont* best = nullptr;
+        ImFont* tiers[3] = {font_small, font_mid, font};
+        for (ImFont* f : tiers) {
+            if (!f)
+                continue;
+            best = f;
+            if (f->FontSize + 0.01f >= px)
+                return f;
+        }
+        return best;
+    }
 
     float sp(float v) const { return v * spk * scale; }
 
@@ -215,9 +234,10 @@ struct Metrics {
     float gsp(float v) const { return v * spk * scale * kGapScale; }
 
     float measure(const std::string& t, float px) const {
-        if (!font || t.empty())
+        ImFont* f = pick(px);
+        if (!f || t.empty())
             return 0.0f;
-        return font->CalcTextSizeA(px, FLT_MAX, 0.0f, t.c_str(), t.c_str() + t.size()).x;
+        return f->CalcTextSizeA(px, FLT_MAX, 0.0f, t.c_str(), t.c_str() + t.size()).x;
     }
 
     float run_w(const std::vector<Span>& spans) const {
@@ -229,9 +249,10 @@ struct Metrics {
 
     /** 行顶 → 基线的偏移（ImGui AddText 内部用的就是 Ascent*scale） */
     float ascent(float px) const {
-        if (!font || font->FontSize <= 0.0f)
+        ImFont* f = pick(px);
+        if (!f || f->FontSize <= 0.0f)
             return px * 0.8f;
-        return font->Ascent * (px / font->FontSize);
+        return f->Ascent * (px / f->FontSize);
     }
 
     /** 行高：Android mono 的 descent-ascent ≈ 1.17em；收到 1.10 更紧凑 */
@@ -1481,7 +1502,9 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
 struct Options {
     float scale = 1.0f;          // hudScale（复用 params->font_scale）
     float outline = kOutlineDefault;
-    ImFont* font = nullptr;
+    ImFont* font = nullptr;       // 大号（按 sp(34) 烘焙）
+    ImFont* font_mid = nullptr;   // 中号（按 sp(18) 烘焙）
+    ImFont* font_small = nullptr; // 小号（按 sp(12) 烘焙）
     /** 画面署名文本；留空时用默认署名（见 build()）。
      *  取自 params.custom_text_center，便于用户自定义。 */
     std::string credit;
@@ -1495,6 +1518,8 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.content_w = 0.0f;
     f.content_h = 0.0f;
     f.M.font = o.font;
+    f.M.font_mid = o.font_mid ? o.font_mid : o.font;
+    f.M.font_small = o.font_small ? o.font_small : o.font;
     f.M.scale = o.scale;
     // 署名行默认不显示；仅当用户在配置里显式设置 custom_text_center 时才画。
     // GPL-3.0 §7(b) 的署名仍保留在 ATTRIBUTION.md / README 与 mangohud --credits。
@@ -1603,7 +1628,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     for (const Glyph& g : f.glyphs) {
         if (g.text.empty())
             continue;
-        dl->AddText(f.M.font, g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
+        dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
                     g.text.c_str(), g.text.c_str() + g.text.size());
     }
 
