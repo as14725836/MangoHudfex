@@ -19,6 +19,7 @@
 #include <spdlog/spdlog.h>
 #include "string_utils.h"
 #include "cpu_freq_util.hpp"
+#include "cpu_load_util.hpp"
 #include "gpu.h"
 #include "hud_elements.h"
 
@@ -310,10 +311,33 @@ bool CPUStats::UpdateCPUData()
             m_cpuData.resize(cpu_count);
     }
 
-    // 如果 /proc/stat 不可用，使用进程 CPU 监控
+    // 如果 /proc/stat 不可用（Android/SELinux 上常见 Permission denied），
+    // 先用 cpuidle 的每核空闲计数反推逐核负载 —— 否则频率左边那个百分比恒为 0，
+    // 且总负载会退化成"本进程使用率"而不是系统负载。
     if (!ret) {
-        update_process_usage(m_cpuDataTotal);
-        SPDLOG_DEBUG("Using process CPU monitoring: {:.1f}%", m_cpuDataTotal.percent);
+        std::vector<int> cores;
+        cores.reserve(m_cpuData.size());
+        for (const auto& c : m_cpuData)
+            cores.push_back(c.cpu_id);
+
+        std::vector<float> per_core;
+        float total_pct = -1.0f;
+        bool idle_ok = false;
+        {
+            static cpuload_util::IdleSampler sampler;
+            idle_ok = sampler.sample(cores, per_core, total_pct);
+        }
+
+        if (idle_ok) {
+            for (size_t i = 0; i < m_cpuData.size() && i < per_core.size(); ++i)
+                m_cpuData[i].percent = per_core[i];
+            if (total_pct >= 0.0f)
+                m_cpuDataTotal.percent = total_pct;
+            SPDLOG_DEBUG("Using cpuidle-based per-core load: {:.1f}%", m_cpuDataTotal.percent);
+        } else {
+            update_process_usage(m_cpuDataTotal);
+            SPDLOG_DEBUG("Using process CPU monitoring: {:.1f}%", m_cpuDataTotal.percent);
+        }
     } else {
         m_cpuPeriod = (double)m_cpuData[0].totalPeriod / m_cpuData.size();
     }
