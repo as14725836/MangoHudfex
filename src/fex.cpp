@@ -399,15 +399,32 @@ static void init_shm(int pid) {
     }
     if (fd == -1) {
         fex_status = "Not Found!";
+        // 原先每 2 秒就刷一条 INFO，会把日志刷爆。改成最多 30 秒报一次，
+        // 其余降到 DEBUG（内容不变，仍能看出是目录不存在还是文件不存在）。
+        static std::chrono::steady_clock::time_point last_report{};
+        const auto now = std::chrono::steady_clock::now();
+        const bool do_report = last_report.time_since_epoch().count() == 0 ||
+                               now - last_report >= std::chrono::seconds(30);
         std::string dir_report;
+        int dirs_ok = 0;
         for (const std::string& d : dirs) {
             DIR* dd = opendir(d.c_str());
             dir_report += d + (dd ? "(ok) " : "(no) ");
-            if (dd) closedir(dd);
+            if (dd) { ++dirs_ok; closedir(dd); }
         }
-        SPDLOG_INFO("FEX stats: N/A (tried {} paths). dirs: {}", candidates.size(), dir_report);
-        SPDLOG_DEBUG("FEX stats: hint - the file only exists while the FEX process runs, "
-                     "and is removed when it exits (fex-diskcache* is NOT it)");
+        if (do_report) {
+            last_report = now;
+            SPDLOG_INFO("FEX stats: N/A (tried {} paths, {} dirs openable). dirs: {}",
+                        candidates.size(), dirs_ok, dir_report);
+            if (dirs_ok == 0) {
+                SPDLOG_INFO("FEX stats: cause - no shm directory exists, so FEX cannot create "
+                            "its stats file at all (shm_open() needs the glibc SHMDIR, "
+                            "/dev/shm on Linux). Preload tools/fexshm to redirect it to "
+                            "Termux tmp.");
+            }
+        } else {
+            SPDLOG_DEBUG("FEX stats: N/A (tried {} paths). dirs: {}", candidates.size(), dir_report);
+        }
         goto err;
     }
     SPDLOG_INFO("FEX stats: using {}", used_name);
