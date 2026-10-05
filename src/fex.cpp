@@ -1,9 +1,16 @@
 #include <spdlog/spdlog.h>
 #include <map>
 #include <string>
+#include <vector>
+#include <chrono>
+#include <cstring>
+#include <cstdlib>
+#include <cerrno>
 #include <unistd.h>
+#include <signal.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <sys/mman.h>
-
 #include "fex.h"
 #include "hud_elements.h"
 #include "mesa/util/macros.h"
@@ -206,7 +213,6 @@ static void atomic_copy_thread_stats(fex_thread_stats *dest, const fex_thread_st
         d_i[i] = s_i[i];
     }
 }
-
 static void destroy_shm() {
     munmap(g_stats.shm_base, g_stats.shm_size);
     close(g_stats.shm_fd);
@@ -218,6 +224,54 @@ static void destroy_shm() {
     g_stats.sampled_stats.clear();
 }
 
+// ---------------------------------------------------------------------------
+// FEX 统计共享内存的定位（Termux glibc / Wine + FEX 场景增强）
+//
+// FEX 端（Source/Windows/UnixLib/FEXUnixLib.cpp）以 "fex-<pid>-stats" 的名字
+// shm_open 到 /dev/shm，其中 pid 是运行它的本机 aarch64 进程 pid。
+// 多数情况下就是本进程 pid；但若经 Wine loader / 启动器转手，或层被加载到
+// 另一个进程，就直接对不上了。这里做多路兜底：
+//   1. 环境变量 MANGOHUD_FEX_SHM  显式指定名字
+//   2. 环境变量 MANGOHUD_FEX_PID  指定 pid
+//   3. fex-<getpid()>-stats        （默认路径）
+//   4. 扫描 /dev/shm 下所有 fex-*-stats，仅接受“该 pid 仍然存活”的项
+// ---------------------------------------------------------------------------
+static std::string shm_name_for_pid(int pid) {
+    return "fex-" + std::to_string(pid) + "-stats";
+}
+
+static bool is_shm_pid_alive(const std::string& name) {
+    // 形如 fex-<pid>-stats
+    constexpr size_t prefix_len = 4;          // "fex-"
+    constexpr const char* suffix = "-stats";
+    constexpr size_t suffix_len = 6;
+    if (name.size() <= prefix_len + suffix_len) return false;
+    if (name.compare(name.size() - suffix_len, suffix_len, suffix) != 0) return false;
+    const int p = atoi(name.c_str() + prefix_len);
+    if (p <= 0) return false;
+    // kill(pid, 0)：存在返回 0；无权限返回 EPERM（同样视为存在）
+    return kill(p, 0) == 0 || errno == EPERM;
+}
+
+static std::vector<std::string> scan_fex_stats_shms(int self_pid) {
+    std::vector<std::string> result;
+    DIR* d = opendir("/dev/shm");
+    if (!d) {
+        return result;
+    }
+    const std::string self = shm_name_for_pid(self_pid);
+    while (auto* entry = readdir(d)) {
+        std::string name = entry->d_name;
+        if (name.rfind("fex-", 0) != 0) continue;
+        if (name == self) continue;            // 第 3 步已经试过
+        if (!is_shm_pid_alive(name)) continue; // 跳过已死进程的残留
+        result.push_back(std::move(name));
+    }
+    closedir(d);
+    return result;
+}
+
+
 static void init_shm(int pid) {
     // Initialize global hardware stats.
     g_stats.cycle_counter_frequency = get_cycle_counter_frequency();
@@ -225,22 +279,42 @@ static void init_shm(int pid) {
     g_stats.page_size = sysconf(_SC_PAGESIZE);
     if (g_stats.page_size <= 0) g_stats.page_size = 4096;
 
-    // Try and open a FEX stats file that relates to the PID in focus.
-    // If this fails then it is non-fatal, just means FEX isn't creating stats for that process.
-    std::string f = "fex-";
-    f += std::to_string(pid);
-    f += "-stats";
+    // 组装候选名字：环境变量 → fex-<pid>-stats → /dev/shm 扫描
+    std::vector<std::string> candidates;
+    if (const char* env = ::getenv("MANGOHUD_FEX_SHM")) {
+        if (*env) candidates.emplace_back(env);
+    }
+    if (const char* env = ::getenv("MANGOHUD_FEX_PID")) {
+        const int p = atoi(env);
+        if (p > 0) candidates.emplace_back(shm_name_for_pid(p));
+    }
+    candidates.emplace_back(shm_name_for_pid(pid));
+    for (auto& name : scan_fex_stats_shms(pid)) {
+        candidates.push_back(std::move(name));
+    }
+
     int fd {-1};
     struct stat buf{};
     uint64_t shm_size{};
     void* shm_base{MAP_FAILED};
     fex_stats_header *header{};
+    std::string used_name;
 
-    fd = shm_open(f.c_str(), O_RDONLY, 0);
+    // Try and open a FEX stats file that relates to the PID in focus.
+    // If this fails then it is non-fatal, just means FEX isn't creating stats for that process.
+    for (const auto& name : candidates) {
+        fd = shm_open(name.c_str(), O_RDONLY, 0);
+        if (fd != -1) {
+            used_name = name;
+            break;
+        }
+    }
     if (fd == -1) {
         fex_status = "Not Found!";
+        SPDLOG_DEBUG("FEX stats: no fex-*-stats in /dev/shm (tried {} candidates)", candidates.size());
         goto err;
     }
+    SPDLOG_INFO("FEX stats: using /dev/shm/{}", used_name);
 
     if (fstat(fd, &buf) == -1) {
         goto err;
@@ -259,9 +333,15 @@ static void init_shm(int pid) {
 
     memory_barrier();
     header = reinterpret_cast<fex_stats_header*>(shm_base);
-    if (header->Version != FEX_STATS_VERSION) {
+    // FEX 约定：新版本只在 {ThreadStatsHeader, ThreadStats} 尾部追加成员，
+    // 因此 ≤ FEX_STATS_VERSION 的旧版本可以安全读取；我们关心的前 7 个字段
+    // (Next/TID/JIT/Signal/SIGBUS/SMC/Softfloat) 在版本 1 起即已固定。
+    // 仅当版本号为 0 或高于已知版本时才拒绝。
+    if (header->Version == 0 || header->Version > FEX_STATS_VERSION) {
         // If the version read doesn't match the implementation then we can't read.
         fex_status = "version mismatch";
+        SPDLOG_WARN("FEX stats: version mismatch (header={}, supported<={})",
+                    static_cast<int>(header->Version), FEX_STATS_VERSION);
         goto err;
     }
 
@@ -343,6 +423,17 @@ void update_fex_stats() {
 
     if (g_stats.pid != gs_pid) {
         // PID changed, likely gamescope changed focus.
+        //
+        // 优化：在 Termux glibc 下 /dev/shm 可能有大量目录项（proot-* 等），
+        // 若一直找不到 FEX 统计而去每帧重扫，开销不可忽略。这里限制重试频率，
+        // 既保留“FEX 稍后启动/统计稍后出现”的自愈能力，又不拖慢渲染。
+        static std::chrono::steady_clock::time_point last_attempt {};
+        const auto now = std::chrono::steady_clock::now();
+        if (g_stats.pid == -1 && last_attempt.time_since_epoch().count() != 0 &&
+            now - last_attempt < std::chrono::seconds(2)) {
+            return;
+        }
+        last_attempt = now;
         init_shm(gs_pid);
     }
 
