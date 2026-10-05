@@ -30,6 +30,7 @@
 #include "ftrace.h"
 #include "fusion_appearance.hpp"
 #include "fusion_render.hpp"
+#include "fusion_metrics.hpp"
 #include "cpu_freq_util.hpp"
 
 #ifdef __linux__
