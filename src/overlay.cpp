@@ -30,6 +30,7 @@
 #include "ftrace.h"
 #include "fusion_appearance.hpp"
 #include "fusion_render.hpp"
+#include "cpu_freq_util.hpp"
 
 #ifdef __linux__
 #include <libgen.h>
@@ -108,16 +109,22 @@ void update_hw_info(const struct overlay_params& params, uint32_t vendorID)
       update_fan();
    if (real_params->enabled[OVERLAY_PARAM_ENABLED_cpu_stats] || logger->is_active()) {
       cpuStats.UpdateCPUData();
-
 #ifdef __linux__
-      if (real_params->enabled[OVERLAY_PARAM_ENABLED_core_load] || real_params->enabled[OVERLAY_PARAM_ENABLED_cpu_mhz] || logger->is_active())
-         cpuStats.UpdateCoreMhz();
       if (real_params->enabled[OVERLAY_PARAM_ENABLED_cpu_temp] || logger->is_active() || real_params->enabled[OVERLAY_PARAM_ENABLED_graphs])
          cpuStats.UpdateCpuTemp();
       if (real_params->enabled[OVERLAY_PARAM_ENABLED_cpu_power] || logger->is_active())
          cpuStats.UpdateCpuPower();
 #endif
    }
+#ifdef __linux__
+   // 逐核频率与 cpu_stats 无关：只要逐核显示(core_load)或总频率(cpu_mhz)要显示就得更新。
+   // 原实现把它放在上面的 cpu_stats 分支里 —— 于是“只开 core_load 不开 cpu_stats”时
+   // UpdateCoreMhz() 从不被调用，8 个核的频率恒为 0。
+   if (real_params->enabled[OVERLAY_PARAM_ENABLED_core_load] ||
+       real_params->enabled[OVERLAY_PARAM_ENABLED_cpu_mhz] ||
+       logger->is_active())
+      cpuStats.UpdateCoreMhz();
+#endif
    if (real_params->enabled[OVERLAY_PARAM_ENABLED_gpu_stats] || logger->is_active()) {
       if (gpus)
          gpus->get_metrics();
@@ -725,7 +732,14 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          src.cpu_mhz = cpuStats.GetCPUDataTotal().cpu_mhz;
          for (const CPUData& cd : cpuStats.GetCPUData()) {
             src.core_pct.push_back(static_cast<int>(cd.percent));
-            src.core_mhz.push_back(cd.mhz);
+            // cpuStats 若没读到该核频率，直接走多路兜底链（含 time_in_state / policy）
+            src.core_mhz.push_back(cd.mhz > 0 ? cd.mhz : cpufreq_util::core_mhz(cd.cpu_id));
+         }
+         // 聚合值兜底：取所有核的最大频率
+         if (src.cpu_mhz <= 0) {
+            for (int m : src.core_mhz)
+               if (m > src.cpu_mhz)
+                  src.cpu_mhz = m;
          }
 #ifdef __linux__
          src.ram_used_gib = memused;

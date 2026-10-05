@@ -18,6 +18,7 @@
 #include <inttypes.h>
 #include <spdlog/spdlog.h>
 #include "string_utils.h"
+#include "cpu_freq_util.hpp"
 #include "gpu.h"
 #include "hud_elements.h"
 
@@ -397,9 +398,25 @@ bool CPUStats::UpdateCoreMhz() {
         while (std::getline(cpuInfo, row) && i < m_cpuData.size()) {
             if (row.find("MHz") != std::string::npos){
                 row = std::regex_replace(row, std::regex(R"([^0-9.])"), "");
-                if (!try_stoi(m_cpuData[i].mhz, row))
-                    m_cpuData[i].mhz = 0;
+                // 解析失败时**不要**把已有的频率抹成 0（原实现是破坏性的，
+                // 会让兜底链已经读到的值白读）
+                int parsed = 0;
+                if (try_stoi(parsed, row) && parsed > 0)
+                    m_cpuData[i].mhz = parsed;
                 i++;
+            }
+        }
+    }
+
+    // 最后的安全网：如果上面这些路径全都没读到（ARM/Android 常见），
+    // 用多路兜底链再试一次 —— 覆盖 cpuinfo_cur_freq / policyN / time_in_state /
+    // MANGOHUD_CPUFREQ_PATH，避免频率恒为 0。
+    if (ok_cores == 0) {
+        for (auto& cpu : m_cpuData) {
+            const int mhz_util = cpufreq_util::core_mhz(cpu.cpu_id);
+            if (mhz_util > 0) {
+                cpu.mhz = mhz_util;
+                ++ok_cores;
             }
         }
     }
@@ -408,6 +425,12 @@ bool CPUStats::UpdateCoreMhz() {
     for (auto& data : m_cpuData)
         if (data.mhz > m_cpuDataTotal.cpu_mhz)
             m_cpuDataTotal.cpu_mhz = data.mhz;
+
+    // 让 m_coreMhz 只作为逐核 MHz 的既有镜像保持有效（此前全仓库只在 clear，从未填充）
+    m_coreMhz.clear();
+    m_coreMhz.reserve(m_cpuData.size());
+    for (const auto& data : m_cpuData)
+        m_coreMhz.push_back(data.mhz);
 
     return true;
 }
