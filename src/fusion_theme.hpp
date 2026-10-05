@@ -208,14 +208,12 @@ fusionThemeOptions(FusionSize size, float bg_opacity = kBgOpacityDefault,
     o.emplace_back("font_scale", "1.0");
     o.emplace_back("cellpadding_y", std::to_string(fusionCellPaddingY(size)));
 
-    // ---- 应用内署名（FusionHUD GPL-3.0 §7(b) 附加署名条款）----
-    // 上游要求在“应用内致谢/关于界面”保留对 The412Banner 的署名与仓库链接。
-    // MangoHud 没有图形化关于页，因此落点为两处：
-    //   1) HUD 上这一行署名（本项）
+    // ---- 署名 ----
+    // HUD 上默认不再显示署名行；GPL-3.0 §7(b) 的署名由下列位置承担：
+    //   1) 项目文档：ATTRIBUTION.md、README 的 Credits 章节
     //   2) 命令行关于界面：mangohud --credits / mangohud --version
-    // 想换成自己的文字，在配置文件里**放在 preset= 之后**覆盖即可：
-    //   custom_text_center=Your own text
-    o.emplace_back("custom_text_center", "FusionHUD by The412Banner");
+    // 若仍想在画面上显示，用户可自行在配置里设置：
+    //   custom_text_center=Your text
 
     // outline_intensity 只影响面板描边宽度，由 fusionOutlineWidth() 在渲染期使用
     (void)outline_intensity;

@@ -341,11 +341,10 @@ float get_time_stat(void *_data, int _idx)
 
 void overlay_new_frame(const struct overlay_params& params)
 {
-   // FusionHUD 的面板边框：accent 色、宽度 = outlineIntensity * sp(3.5)。
-   // 非 FusionHUD 档位时保持 0，行为与原版一致。
-   const float fusion_border = fusionhud::isFusionActive(params)
-      ? fusionhud::fusionOutlineWidth(fusionhud::kOutlineDefault)
-      : 0.0f;
+   // 边框一律交给自绘路径（fusion_render.hpp 的 draw）处理，这里保持 0：
+   // ImGui 的 WindowBorderSize 会收窄窗口内矩形/裁剪区，导致面板描边在
+   // 某些方向被裁掉（"四个方向有的没有紫边"）。
+   const float fusion_border = 0.0f;
    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, fusion_border);
    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(4,4));
    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8,-3));
@@ -758,7 +757,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
          // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
          fo.font = data.font_fusion ? data.font_fusion : ImGui::GetFont();
-         // 署名行文本（空则用默认署名 FusionHUD by The412Banner）
+         // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 
          fusionhud::fr::Frame fframe;
@@ -768,7 +767,10 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
                               fusionhud::currentFusionSize(*real_params),
                               fo);
 
-         const ImVec2 fsize(std::max(fframe.content_w, 1.0f), std::max(fframe.content_h, 1.0f));
+         // 窗口比面板大一圈留白：描边因此远离裁剪边界，四边都能完整绘出
+         const float fmg = fusionhud::fr::panel_margin(fframe, fo);
+         const ImVec2 fsize(std::max(fframe.content_w, 1.0f) + fmg * 2.0f,
+                            std::max(fframe.content_h, 1.0f) + fmg * 2.0f);
          // 用本帧真实尺寸重新定位/定尺寸（覆盖调用方那次按 params->width/height 的布局）
          position_layer(data, *real_params, fsize);
          ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

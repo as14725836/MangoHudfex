@@ -718,20 +718,17 @@ Example output:
 - **应用内致谢界面**：运行 `mangohud --credits`（或 `mangohud --version`）查看；
   另可在 HUD 上显示 `FusionHUD by The412Banner` 署名行（见下）
 
-### 在 HUD 上显示署名行
+### 署名位置
 
-FusionHUD 档位（`preset=10..14`）默认启用 `custom_text_center` 以在画面上显示署名：
+HUD 画面上**默认不再显示**署名行。GPL-3.0 §7(b) 的署名由两处承担：
 
-```ini
-preset=10
-# 上面已包含： custom_text_center=FusionHUD by The412Banner
-```
+1. **项目文档**：本 README 的 Credits 章节与 [`ATTRIBUTION.md`](ATTRIBUTION.md)
+2. **命令行关于界面**：`mangohud --credits`（`mangohud --version` 也会附带署名行）
 
-想换成自己的文字，在配置文件里**放在 `preset=` 之后**覆盖即可：
+若仍希望在画面上显示一行署名，自行设置即可（会绘制在面板底部）：
 
 ```ini
-preset=10
-custom_text_center=Your own text
+custom_text_center=FusionHUD by The412Banner
 ```
 
 ### MangoHud

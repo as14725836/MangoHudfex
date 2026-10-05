@@ -1496,8 +1496,9 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.content_h = 0.0f;
     f.M.font = o.font;
     f.M.scale = o.scale;
-    // 留空时用默认署名，保证 §7(b) 的署名在任何配置下都在画面上
-    f.credit = o.credit.empty() ? std::string("FusionHUD by The412Banner") : o.credit;
+    // 署名行默认不显示；仅当用户在配置里显式设置 custom_text_center 时才画。
+    // GPL-3.0 §7(b) 的署名仍保留在 ATTRIBUTION.md / README 与 mangohud --credits。
+    f.credit = o.credit;
 
     switch (size) {
         case FusionSize::FULL:    build_full(f, s, c); break;
@@ -1511,9 +1512,28 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     add_credit_line(f, f.M.gsp(10.0f));
 }
 
+/**
+ * 面板与窗口边缘之间留的透明留白（px）。
+ *
+ * 为什么需要：面板外沿若正好压在窗口的裁剪边界上，描边会被裁掉一部分，
+ * 表现为"四个方向有的有紫边、有的没有"（ImGui 的 InnerClipRect 还会因
+ * WindowBorderSize 再收窄一点）。留出够宽的透明带，描边就完整落在裁剪区内。
+ */
+inline float panel_margin(const Frame& f, const Options& opt) {
+    const float sw = std::max(1.0f, std::round(f.M.sp(kOutlineMaxSp * opt.outline)));
+    return sw + 4.0f;
+}
+
 inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2 o, const Options& opt) {
     if (!dl || f.content_w <= 0.0f || f.content_h <= 0.0f)
         return;
+
+    // 把局部原点整体内移一个留白：面板于是落在窗口裁剪区之内，描边不会被裁。
+    {
+        const float mg = panel_margin(f, opt);
+        o.x += mg;
+        o.y += mg;
+    }
 
     // 矩形对齐到整数像素：否则描边会落在半像素上，粗细忽 1 忽 2
     const float x0 = std::floor(o.x + 0.5f);
