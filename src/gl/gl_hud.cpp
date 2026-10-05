@@ -233,8 +233,20 @@ void imgui_render(gl_context *ctx, unsigned int width, unsigned int height)
         overlay_end_frame();
     }
 
+    // 可选（gl_hud_bind_default_fb=1）：把 HUD 画到窗口默认帧缓冲（FB0），
+    // 而不是应用当前绑定的帧缓冲。
+    // Wine + Mesa(GL) 场景下，应用常把画面渲染进离屏 FBO，HUD 跟着画进去后
+    // 未必会被呈现到屏幕 → 看起来就是"时不时闪烁"。画完后恢复原来的绑定。
+    const bool bind_default_fb = params.enabled[OVERLAY_PARAM_ENABLED_gl_hud_bind_default_fb];
+    GLint saved_fbo = 0;
+    if (bind_default_fb) {
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saved_fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (bind_default_fb && saved_fbo != 0)
+        glBindFramebuffer(GL_FRAMEBUFFER, saved_fbo);
 
     if (sw_stats.font_params_hash != params.font_params_hash)
     {

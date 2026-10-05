@@ -141,6 +141,7 @@ struct Tracepoint;
    OVERLAY_PARAM_BOOL(fusion_minimal)                \
    OVERLAY_PARAM_BOOL(fusion_mega)                   \
    OVERLAY_PARAM_CUSTOM(fusion_outline)              \
+   OVERLAY_PARAM_BOOL(gl_hud_bind_default_fb)       \
    OVERLAY_PARAM_CUSTOM(fps_sampling_period)         \
    OVERLAY_PARAM_CUSTOM(output_folder)               \
    OVERLAY_PARAM_CUSTOM(output_file)                 \

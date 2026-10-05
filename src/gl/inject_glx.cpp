@@ -247,7 +247,7 @@ EXPORT_C_(int64_t) glXSwapBuffersMscOML(void* dpy, void* drawable, int64_t targe
 
     if (!is_blacklisted())
         if (fps_limiter)
-            fps_limiter->limit(true);
+            fps_limiter->limit(false);   // 交换后必须解除限帧（原先误写成 true，状态会错乱）
 
     return ret;
 }
