@@ -603,6 +603,7 @@ parse_ftrace(const char *str) {
 #define parse_font_scale(s) parse_float(s)
 #define parse_background_alpha(s) parse_float(s)
 #define parse_alpha(s) parse_float(s)
+#define parse_fusion_outline(s) parse_float(s)
 #define parse_permit_upload(s) parse_unsigned(s)
 #define parse_no_small_font(s) parse_unsigned(s) != 0
 #define parse_cellpadding_y(s) parse_float(s)
@@ -933,6 +934,7 @@ static void set_param_defaults(struct overlay_params *params){
    params->fps_color = { 0xb22222, 0xfdfd09, 0x39f900 };
    params->fps_value = { 30, 60 };
    params->round_corners = 0;
+   params->fusion_outline = 1.0f;   // 面板描边强度：1.0 → 约 3.5px
    params->battery_color =0xff9078;
    params->fsr_steam_sharpness = -1;
    params->picmip = -17;

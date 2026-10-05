@@ -761,6 +761,8 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.font = data.font_fusion.big ? data.font_fusion.big : ImGui::GetFont();
          fo.font_mid = data.font_fusion.mid ? data.font_fusion.mid : fo.font;
          fo.font_small = data.font_fusion.small ? data.font_fusion.small : fo.font;
+         // 面板描边强度：fusion_outline（默认 1.0 → 约 3.5px），0 = 不描边。
+         fo.outline = real_params->fusion_outline > 0.0f ? real_params->fusion_outline : 0.0f;
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 

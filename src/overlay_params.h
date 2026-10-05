@@ -140,6 +140,7 @@ struct Tracepoint;
    OVERLAY_PARAM_BOOL(fusion_pill)                   \
    OVERLAY_PARAM_BOOL(fusion_minimal)                \
    OVERLAY_PARAM_BOOL(fusion_mega)                   \
+   OVERLAY_PARAM_CUSTOM(fusion_outline)              \
    OVERLAY_PARAM_CUSTOM(fps_sampling_period)         \
    OVERLAY_PARAM_CUSTOM(output_folder)               \
    OVERLAY_PARAM_CUSTOM(output_file)                 \
@@ -306,6 +307,7 @@ struct overlay_params {
    unsigned height;
    int offset_x, offset_y;
    float round_corners;
+   float fusion_outline;   // FusionHUD 面板描边强度（× sp(3.5)）；默认 1.0，0 = 不描边
    unsigned vsync;
    std::string vulkan_present_mode;
    std::optional<VkPresentModeKHR> m_vulkan_present_mode;

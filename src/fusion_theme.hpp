@@ -54,7 +54,7 @@ constexpr float kPillRadiusRatio = 0.5f;   // Pill: height / 2f（胶囊）
 constexpr float kTileRadiusSp    = 6.0f;   // onDraw: sp(6f)
 constexpr float kTileBgBase      = 14.0f;  // Color.argb(14 * bgOpacity) → clamp[8,40]
 constexpr float kOutlineMaxSp    = 3.5f;   // strokeW = outlineIntensity * sp(3.5f)
-constexpr float kOutlineDefault  = 0.4f;   // hudOutline 默认 "40" → 0.4
+constexpr float kOutlineDefault  = 1.0f;   // 面板描边强度：1.0 × sp(3.5) ≈ 3.5px
 constexpr float kOutlineStrong   = 0.7f;   // "strong" → 70
 constexpr float kBgOpacityDefault = 0.8f;  // bgOpacity 默认 0.8
 constexpr float kGraphHeightSp   = 22.0f;  // Full/Mega: gh = sp(22f)

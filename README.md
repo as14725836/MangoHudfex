@@ -761,6 +761,7 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_pill` | Pill —— 胶囊布局 |
 | `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
 | `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
+| `fusion_outline` | 面板描边（紫边）强度，浮点，默认 `1.0` ≈ 3.5px；`0` = 不画描边 |
 
 ### 字体
 
