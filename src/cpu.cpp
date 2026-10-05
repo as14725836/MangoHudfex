@@ -5,6 +5,8 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <utility>
+#include <cstdlib>
 #include <numeric>
 #include <algorithm>
 #include <thread>
@@ -321,26 +323,76 @@ bool CPUStats::UpdateCPUData()
 
 bool CPUStats::UpdateCoreMhz() {
     m_coreMhz.clear();
-    FILE *fp;
-    static bool scaling_freq = true;
-    if (scaling_freq){
-        for (auto& cpu : m_cpuData){
-            std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(cpu.cpu_id) + "/cpufreq/scaling_cur_freq";
-            if ((fp = fopen(path.c_str(), "r"))){
-                int64_t temp;
-                if (fscanf(fp, "%" PRId64, &temp) != 1)
-                    temp = 0;
-                cpu.mhz = temp / 1000;
-                fclose(fp);
-                scaling_freq = true;
-            } else {
-                scaling_freq = false;
+
+    // 逐核按候选路径依次尝试。
+    // 原实现的问题：遇到**第一个** fopen 失败就 break 并把 scaling_freq 置为 false，
+    // 此后永久走 /proc/cpuinfo 分支 —— 而该分支只认 x86 的 "MHz" 字段，
+    // 在 ARM/Android（以及容器里 /sys 不可见）下就永远不会再恢复，频率恒为 0。
+    auto read_khz = [](const std::string& path, int64_t& out) -> bool {
+        FILE* fp = fopen(path.c_str(), "r");
+        if (!fp)
+            return false;
+        const bool ok = (fscanf(fp, "%" PRId64, &out) == 1);
+        fclose(fp);
+        return ok;
+    };
+
+    // 有些内核只在 policyN 下暴露 cpufreq（cpuN/cpufreq 不存在）。
+    // 先建立 "核心号 -> policy 目录" 的映射用于回落。
+    std::vector<std::pair<int, std::string>> policy_dirs;
+    if (DIR* d = opendir("/sys/devices/system/cpu/cpufreq")) {
+        while (auto* e = readdir(d)) {
+            if (strncmp(e->d_name, "policy", 6) != 0)
+                continue;
+            const std::string base = std::string("/sys/devices/system/cpu/cpufreq/") + e->d_name;
+            FILE* fp = fopen((base + "/related_cpus").c_str(), "r");
+            if (!fp)
+                continue;
+            char buf[256] = {};
+            std::string rel;
+            if (fgets(buf, sizeof(buf), fp))
+                rel = buf;
+            fclose(fp);
+            std::stringstream ss(rel);
+            int id;
+            while (ss >> id)
+                policy_dirs.emplace_back(id, base);
+        }
+        closedir(d);
+    }
+
+    // 允许环境变量指定一个代表路径（容器/裁剪环境下 /sys 路径不同时可以救急）
+    const char* env_path = getenv("MANGOHUD_CPUFREQ_PATH");
+
+    size_t ok_cores = 0;
+    for (auto& cpu : m_cpuData) {
+        const std::string core = std::to_string(cpu.cpu_id);
+
+        std::vector<std::string> candidates;
+        if (env_path && *env_path)
+            candidates.emplace_back(env_path);
+        candidates.emplace_back("/sys/devices/system/cpu/cpu" + core + "/cpufreq/scaling_cur_freq");
+        candidates.emplace_back("/sys/devices/system/cpu/cpu" + core + "/cpufreq/cpuinfo_cur_freq");
+        for (const auto& p : policy_dirs)
+            if (p.first == cpu.cpu_id)
+                candidates.emplace_back(p.second + "/scaling_cur_freq");
+
+        int64_t khz = 0;
+        for (const auto& path : candidates) {
+            if (read_khz(path, khz) && khz > 0) {
+                cpu.mhz = khz / 1000;   // kHz -> MHz
+                ++ok_cores;
                 break;
             }
         }
-    } else {
-        static std::ifstream cpuInfo(PROCCPUINFOFILE);
-        static std::string row;
+    }
+
+    // 全部核都读不到时才回退 /proc/cpuinfo（x86 / Wine 有 "cpu MHz"；
+    // 多数 ARM 内核没有该字段，此时只能保持 0）
+    if (ok_cores == 0) {
+        SPDLOG_WARN("CPUStats: 所有核的 cpufreq 都不可读，回退 /proc/cpuinfo");
+        std::ifstream cpuInfo(PROCCPUINFOFILE);
+        std::string row;
         size_t i = 0;
         while (std::getline(cpuInfo, row) && i < m_cpuData.size()) {
             if (row.find("MHz") != std::string::npos){
@@ -353,7 +405,7 @@ bool CPUStats::UpdateCoreMhz() {
     }
 
     m_cpuDataTotal.cpu_mhz = 0;
-    for (auto data : m_cpuData)
+    for (auto& data : m_cpuData)
         if (data.mhz > m_cpuDataTotal.cpu_mhz)
             m_cpuDataTotal.cpu_mhz = data.mhz;
 

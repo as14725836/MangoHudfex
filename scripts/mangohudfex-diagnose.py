@@ -226,6 +226,59 @@ else:
         except Exception as e:
             print("%s 解析 %s 失败: %s" % (WARN, path, e))
 
+# ---------------------------------------------------------------- 6. CPU 频率
+section("6. CPU 频率可读性")
+import glob as _glob
+
+cpu_nodes = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*"))
+cpufreq_ok, cpufreq_bad = [], []
+for n in cpu_nodes:
+    cur = os.path.join(n, "cpufreq/scaling_cur_freq")
+    try:
+        with open(cur) as f:
+            khz = int(f.read().strip())
+        cpufreq_ok.append((os.path.basename(n), khz // 1000))
+    except Exception:
+        cpufreq_bad.append(os.path.basename(n))
+
+print("%s 发现 %d 个 CPU 节点；可读 scaling_cur_freq 的 %d 个"
+      % (OK if cpu_nodes else WARN, len(cpu_nodes), len(cpufreq_ok)))
+for name, mhz in cpufreq_ok[:8]:
+    print("    %-6s %d MHz" % (name, mhz))
+if cpufreq_bad:
+    print("%s 以下核的 cpufreq 读不到（这些核的频率会显示为 0）：%s"
+          % (WARN, ", ".join(cpufreq_bad[:8])))
+
+# policyN 回落
+policy = sorted(_glob.glob("/sys/devices/system/cpu/cpufreq/policy*"))
+if policy:
+    print("%s 存在 %d 个 policy 节点（核级节点缺失时可作为回落）" % (OK, len(policy)))
+else:
+    print("%s 没有 policy 节点" % WARN)
+
+if not cpu_nodes:
+    problems.append("/sys/devices/system/cpu 下没有 CPU 节点 —— /sys 可能未挂载进该环境")
+elif not cpufreq_ok:
+    problems.append("所有核的 cpufreq 都读不到（SELinux 限制或 /sys 未挂载），CPU 频率将显示 0")
+    notes.append("可设置 MANGOHUD_CPUFREQ_PATH=<某个可读的 cpufreq 节点> 作为兜底")
+
+if os.path.exists("/proc/stat"):
+    try:
+        open("/proc/stat").read(1)
+        print("%s /proc/stat 可读" % OK)
+    except Exception:
+        print("%s /proc/stat 不可读（CPU 占用率会退化为“进程占用”而不是整机占用）" % WARN)
+else:
+    print("%s /proc/stat 不存在" % WARN)
+
+cpuinfo_mhz = 0
+try:
+    with open("/proc/cpuinfo") as f:
+        cpuinfo_mhz = f.read().count("MHz")
+except Exception:
+    pass
+print("    /proc/cpuinfo 里 'MHz' 字段出现 %d 次（ARM 通常为 0，x86/Wine 才有）" % cpuinfo_mhz)
+
 # ---------------------------------------------------------------- 结论
 section("结论")
 if problems:
