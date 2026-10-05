@@ -7,6 +7,21 @@ class Test:
         self.error_count = 0
         self.ignore_params = ["pci_dev", "mangoapp_steam", "fsr_steam_sharpness",
                               "blacklist", "media_player_format"]
+        # 这些参数的“默认值”并不在 set_param_defaults() 里（或其在 C++ 中的表示与
+        # 配置文本不是 1:1，例如枚举 / keysym / 路径 / 列表 / 带 f 后缀的浮点），
+        # 因此只做“是否出现在示例配置中”的存在性检查，不比对取值。
+        self.ignore_value_check = [
+            "fps_limit", "fps_limit_method", "fps_text", "fps_metrics",
+            "media_player_name", "graphs", "legacy_layout", "custom_text",
+            "custom_text_center", "exec", "output_folder", "output_file",
+            "font_file", "font_file_text", "font_glyph_ranges", "font_size_text",
+            "font_scale", "font_scale_media_player", "position",
+            "vulkan_present_mode", "gl_size_query", "gl_bind_framebuffer",
+            "gl_dont_flip", "toggle_hud", "toggle_hud_position", "toggle_preset",
+            "toggle_fps_limit", "toggle_logging", "reset_fps_metrics",
+            "reload_cfg", "upload_log", "log_duration", "cpu_text", "gpu_text",
+            "autostart_log", "device_battery", "network", "gpu_list", "ftrace",
+        ]
         # self.files_changed()
         self.get_options()
         self.get_param_defaults()
@@ -60,6 +75,12 @@ class Test:
                             if key not in self.options:
                                 continue
 
+                            if key in self.ignore_value_check:
+                                continue
+                            if self.options[key] is None:
+                                # 默认值未解析出来（不在 set_param_defaults 里）——不比对
+                                continue
+
                             value = line[1].strip()
                             if "," in value:
                                 value = value.split(",")
@@ -70,6 +91,26 @@ class Test:
                                 print(f"default: {self.options[key]}, config: {value}")
                                 print("")
 
+    @staticmethod
+    def _extract_function_body(contents, name):
+        """按大括号配平提取 `void <name>(...)` 的函数体；找不到返回 None。"""
+        idx = contents.find('void ' + name)
+        if idx < 0:
+            return None
+        br = contents.find('{', idx)
+        if br < 0:
+            return None
+        depth = 0
+        for i in range(br, len(contents)):
+            c = contents[i]
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    return contents[br + 1:i]
+        return None
+
     def get_param_defaults(self):
         # Open the C++ file
         with open('../src/overlay_params.cpp', 'r') as f:
@@ -79,18 +120,16 @@ class Test:
             # Define the name of the function to search for
             function_name = 'set_param_defaults'
 
-            # Define a regular expression to match the function definition
-            function_regex = re.compile(r"void\s+" +
-                                        function_name + r"\s*\(([^)]*)\)\s*{(.+?)\s*}\s*\n",
-                                        re.MULTILINE | re.DOTALL)
-
-            # Find the match of the regular expression in the file contents
-            match = function_regex.search(contents)
+            # 用大括号配平提取函数体。
+            # 原实现用非贪婪正则 r"{(.+?)\s*}\s*\n"，会在**第一个**内层 '}' 处截断，
+            # 导致绝大多数默认值解析不到（self.options[key] 恒为 None），从而把
+            # data/MangoHud.conf 里正常的示例行全部误报成“与默认值不符”。
+            function_contents = self._extract_function_body(contents, function_name)
 
             # If the function is found, extract the contents
-            if match:
+            if function_contents is not None:
                 # Extract the contents of the function
-                function_contents = match.group(2)
+                pass
                 for line in function_contents.splitlines():
 
                     # FIXME: Some variables get stored as string in a string

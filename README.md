@@ -751,3 +751,19 @@ custom_text_center=Your own text
 因此**分发本仓库（含二进制）时须整体按 GNU GPL v3.0 处理**（MIT 与 GPL 兼容，
 可并入 GPL 作品）。仓库根的 `LICENSE` 仍为上游 MIT 原文，尚未替换 —— 详见
 [`ATTRIBUTION.md`](ATTRIBUTION.md) 第 4 节。
+
+
+### FusionHUD 档位参数（fork 新增）
+
+启用 FusionHUD 外观时按档位二选一（也可直接用 `preset=10..14`）：
+
+| 参数 | 说明 |
+|---|---|
+| `fusion_full` | Full —— 完整指标列表 |
+| `fusion_tiles` | Tiles —— 磁贴布局 |
+| `fusion_pill` | Pill —— 胶囊布局 |
+| `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
+| `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
+
+分叉新增的其它开关：`hide_engine_names`、`hide_fps_superscript`、`inherit`、`dx_api`，
+含义与上游同名字段一致；`dx_api` 用于选择 DXVK / VKD3D / Zink 的显示口径。
