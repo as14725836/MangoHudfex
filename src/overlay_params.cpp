@@ -934,7 +934,7 @@ static void set_param_defaults(struct overlay_params *params){
    params->fps_color = { 0xb22222, 0xfdfd09, 0x39f900 };
    params->fps_value = { 30, 60 };
    params->round_corners = 0;
-   params->fusion_outline = 1.0f;   // 面板描边强度：1.0 → 约 3.5px
+   params->fusion_outline = 0.0f;   // 面板描边强度：0 = 不画紫边（默认）；1.0 → 约 3.5px
    params->battery_color =0xff9078;
    params->fsr_steam_sharpness = -1;
    params->picmip = -17;

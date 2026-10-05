@@ -1545,6 +1545,10 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
  * WindowBorderSize 再收窄一点）。留出够宽的透明带，描边就完整落在裁剪区内。
  */
 inline float panel_margin(const Frame& f, const Options& opt) {
+    // 默认不画描边（fusion_outline=0）：只留 1px，避免抗锯齿边缘被窗口裁剪区切掉。
+    if (opt.outline <= 0.0f)
+        return 1.0f;
+    // 有描边时为它预留"线宽 + 4px"的留白，保证四个方向的描边都不被裁。
     const float sw = std::max(1.0f, std::round(f.M.sp(kOutlineMaxSp * opt.outline)));
     return sw + 4.0f;
 }
