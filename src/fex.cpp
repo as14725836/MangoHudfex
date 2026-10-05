@@ -228,14 +228,17 @@ static void destroy_shm() {
 // ---------------------------------------------------------------------------
 // FEX 统计共享内存的定位（Termux glibc / Wine + FEX 场景增强）
 //
-// FEX 端（Source/Windows/UnixLib/FEXUnixLib.cpp）以 "fex-<pid>-stats" 的名字
-// shm_open 到 /dev/shm，其中 pid 是运行它的本机 aarch64 进程 pid。
+// FEX 端（Source/Windows/UnixLib/FEXUnixLib.cpp）用 shm_open("fex-<pid>-stats")
+// 创建统计共享内存，落点由 glibc 的 SHMDIR 决定（Linux 默认 /dev/shm；
+// 原生 Termux 上 /dev/shm 不可用，所以这里把 Termux 的 tmp 放在查找首位）。
+// pid 是运行它的本机 aarch64 进程 pid。
 // 多数情况下就是本进程 pid；但若经 Wine loader / 启动器转手，或层被加载到
 // 另一个进程，就直接对不上了。这里做多路兜底：
 //   1. 环境变量 MANGOHUD_FEX_SHM  显式指定名字
 //   2. 环境变量 MANGOHUD_FEX_PID  指定 pid
 //   3. fex-<getpid()>-stats        （默认路径）
-//   4. 扫描 /dev/shm 下所有 fex-*-stats，仅接受“该 pid 仍然存活”的项
+//   4. 扫描候选目录（Termux tmp -> /dev/shm -> ...）下所有 fex-*-stats，
+//      仅接受“该 pid 仍然存活”的项
 // ---------------------------------------------------------------------------
 static std::string shm_name_for_pid(int pid) {
     return "fex-" + std::to_string(pid) + "-stats";
@@ -272,12 +275,14 @@ static std::vector<std::string> fex_shm_dirs() {
     // 显式指定了目录 → 只用它，不再扫 /dev/shm、tmp 等其它目录（唯一读取路径）
     if (!dirs.empty())
         return dirs;
-    add("/dev/shm");
+    // Termux 的 tmp 放最前：原生 Termux 上 /dev/shm 不可用，
+    // FEX 的运行时文件（含统计）常出现在这里。
+    add("/data/data/com.termux/files/usr/tmp");
     if (const char* t = ::getenv("TMPDIR"))
         add(t);
     if (const char* p = ::getenv("PREFIX"))
         add(std::string(p) + "/tmp");
-    add("/data/data/com.termux/files/usr/tmp");
+    add("/dev/shm");
     add("/data/data/com.termux/files/usr/glibc/tmp");
     // glibc 的 SHMDIR 在部分发行版/Termux 上被改到这些位置
     add("/data/data/com.termux/files/usr/tmp/shm");
