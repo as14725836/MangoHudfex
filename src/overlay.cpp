@@ -150,6 +150,45 @@ void update_hw_info(const struct overlay_params& params, uint32_t vendorID)
       getIoStats(g_io_stats);
 #endif
    if (gpus && gpus->active_gpu()) {
+#ifdef __linux__
+      // —— kgsl/Adreno 兜底 ——
+      // MangoHud 常规的 DRM 探测在 Termux/Android 上常常拿不到 GPU 指标
+      // （load / temp / CoreClock / MemClock / sys_vram_used 全是 0）；
+      // 而 gpu.cpp 里注入的 Adreno 对象只在"完全没有检测到 GPU"时才成为 active。
+      // 所以这里不依赖驱动识别，直接对当前 active 的 GPU 用 sysfs 探测补齐。
+      // 每 200ms 一次；各探测函数内部另有缓存，不会每帧 open 一堆文件。
+      {
+         static long long s_last_probe_ms = 0;
+         long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch()).count();
+         if (now_ms - s_last_probe_ms >= 200) {
+            s_last_probe_ms = now_ms;
+            static fusionhud::GpuPaths s_paths = fusionhud::gpuProbePaths();
+            auto& m = gpus->active_gpu()->metrics;
+            if (m.load <= 0) {
+               int v = fusionhud::readGpuUtilization(s_paths);
+               if (v >= 0) m.load = v;
+            }
+            if (m.temp <= 0) {
+               int v = fusionhud::readGpuTemperature();
+               if (v >= 0) m.temp = v;
+            }
+            if (m.CoreClock <= 0) {
+               double v = fusionhud::readGpuFrequency(s_paths);
+               if (v > 0.0) m.CoreClock = static_cast<int>(v + 0.5);
+            }
+            if (m.MemClock <= 0) {
+               double v = fusionhud::readMemClockCachedMHz();
+               if (v > 0.0) m.MemClock = static_cast<int>(v + 0.5);
+            }
+            if (m.sys_vram_used <= 0.0f) {
+               auto vi = fusionhud::detectVramCached();
+               if (vi.usedMB >= 0)
+                  m.sys_vram_used = static_cast<float>(vi.usedMB) / 1024.0f;
+            }
+         }
+      }
+#endif
       currentLogData.gpu_load = gpus->active_gpu()->metrics.load;
       currentLogData.gpu_temp = gpus->active_gpu()->metrics.temp;
       currentLogData.gpu_core_clock = gpus->active_gpu()->metrics.CoreClock;
