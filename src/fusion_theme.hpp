@@ -121,6 +121,10 @@ inline FusionMetrics fusionMetrics(FusionSize s) {
     return {12.0f, 0.62f, 10.0f, 4.0f, 8.0f, 10.0f, 18.0f, 10.0f, 0.0f, 0.0f};
 }
 
+/** FusionHUD 用到的最大字号（sp 单位）：Minimal 档的大号 FPS = sp(34f)。
+ *  font.cpp 用它来决定专用字体的烘焙尺寸（ImGui 放大绘制会模糊）。 */
+constexpr float kMaxTextSp = 34.0f;
+
 /**
  * sp → MangoHud font_size 的换算系数。
  * 上游 sp 会乘 Android density（主流手机 ≈2.6~3.5）；MangoHud 的 font_size 直接是

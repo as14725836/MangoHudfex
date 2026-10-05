@@ -177,7 +177,7 @@ void imgui_create(gl_context *ctx, const gl_wsi plat)
 
     ImGui_ImplOpenGL3_Init(ctx);
 
-    create_fonts(nullptr, params, sw_stats.font_small, sw_stats.font_text, sw_stats.font_secondary);
+    create_fonts(nullptr, params, sw_stats.font_small, sw_stats.font_text, sw_stats.font_secondary, sw_stats.font_fusion);
     sw_stats.font_params_hash = params.font_params_hash;
     inited = true;
 
@@ -239,7 +239,7 @@ void imgui_render(gl_context *ctx, unsigned int width, unsigned int height)
     if (sw_stats.font_params_hash != params.font_params_hash)
     {
         sw_stats.font_params_hash = params.font_params_hash;
-        create_fonts(nullptr, params, sw_stats.font_small, sw_stats.font_text, sw_stats.font_secondary);
+        create_fonts(nullptr, params, sw_stats.font_small, sw_stats.font_text, sw_stats.font_secondary, sw_stats.font_fusion);
         // Previus texture is created in ImGui_ImplOpenGL3_CreateDeviceObjects in first call of ImGui_ImplOpenGL3_NewFrame
         ImGui_ImplOpenGL3_DestroyFontsTexture(ctx);
         ImGui_ImplOpenGL3_CreateFontsTexture(ctx);

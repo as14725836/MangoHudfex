@@ -4,8 +4,9 @@
 #include "font_default.h"
 #include "IconsForkAwesome.h"
 #include "forkawesome.h"
+#include "fusion_theme.hpp"
 
-void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*& small_font, ImFont*& text_font, ImFont*& secondary_font)
+void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*& small_font, ImFont*& text_font, ImFont*& secondary_font, ImFont*& fusion_font)
 {
    auto& io = ImGui::GetIO();
    if (!font_atlas)
@@ -75,10 +76,37 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    bool text_same_size = (font_size == font_size_text);
    bool secondary_same_size = (font_size == font_size_secondary);
 
+   // ---- FusionHUD 专用字体 ----
+   // ImGui 把字体按固定尺寸烘焙进图集，用**比图集更大**的尺寸绘制就会明显模糊。
+   // FusionHUD 的大号 FPS 是 sp(34) ≈ 51px，远大于主字体（默认 24），
+   // 所以这里按"FusionHUD 用到的最大字号"单独烘焙一个字体，
+   // 供 fusion_render.hpp 的所有字号使用 —— 全程都变成缩绘，因此清晰。
+   ImFontConfig fusion_config;
+   fusion_config.OversampleH = 2;
+   fusion_config.OversampleV = 1;
+   fusion_config.PixelSnapH = true;   // 字形前进取整，位置更锐利
+
+   // FusionHUD 只会画 ASCII + ° · — ↓；刻意**不**跟随 font_glyph_ranges，
+   // 否则在 51px 下加 CJK 会让字体图集体积爆炸。
+   static const ImWchar fusion_ranges[] = {
+      0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
+      0x2013, 0x2014,   // – —
+      0x2190, 0x2193,   // ← ↑ → ↓
+      0,
+   };
+
+   float fusion_size = fusionhud::kMaxTextSp * fusionhud::kSpToPx *
+                       (params.font_scale > 0.0f ? params.font_scale : 1.0f);
+   if (fusion_size < font_size)
+      fusion_size = font_size;
+   if (fusion_size > 96.0f)
+      fusion_size = 96.0f;
+
    // ImGui takes ownership of the data, no need to free it
    if (!params.font_file.empty() && file_exists(params.font_file)) {
       font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size, nullptr, same_font && text_same_size ? glyph_ranges.Data : default_range);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
+      fusion_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), fusion_size, &fusion_config, fusion_ranges);
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {
@@ -95,6 +123,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       const char* ttf_compressed_base85 = GetDefaultCompressedFontDataTTFBase85();
       font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size, nullptr, default_range);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
+      fusion_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, fusion_size, &fusion_config, fusion_ranges);
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {

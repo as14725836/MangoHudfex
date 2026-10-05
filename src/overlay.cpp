@@ -755,7 +755,9 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
 
          fusionhud::fr::Options fo;
          fo.scale = real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f;
-         fo.font = ImGui::GetFont();
+         // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
+         // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
+         fo.font = data.font_fusion ? data.font_fusion : ImGui::GetFont();
 
          fusionhud::fr::Frame fframe;
          fusionhud::fr::build(fframe,
