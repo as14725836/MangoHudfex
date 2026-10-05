@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include "fex.h"
 #include "hud_elements.h"
 #include "mesa/util/macros.h"
@@ -253,21 +254,52 @@ static bool is_shm_pid_alive(const std::string& name) {
     return kill(p, 0) == 0 || errno == EPERM;
 }
 
+// 共享内存所在目录列表（按优先级）。
+// Android/Termux 上 /dev/shm 未必存在/可写，FEX 或容器也会把 stats 放进 tmp 目录，
+// 所以这里多路查找；可用 MANGOHUD_FEX_DIR 显式指定（放在最前）。
+static std::vector<std::string> fex_shm_dirs() {
+    std::vector<std::string> dirs;
+    auto add = [&dirs](const std::string& d) {
+        if (d.empty() || d[0] != '/') return;
+        for (const auto& x : dirs)
+            if (x == d) return;
+        dirs.push_back(d);
+    };
+    if (const char* d = ::getenv("MANGOHUD_FEX_DIR"))
+        add(d);
+    if (const char* d = ::getenv("MANGOHUD_FEX_SHM_DIR"))
+        add(d);
+    // 显式指定了目录 → 只用它，不再扫 /dev/shm、tmp 等其它目录（唯一读取路径）
+    if (!dirs.empty())
+        return dirs;
+    add("/dev/shm");
+    if (const char* t = ::getenv("TMPDIR"))
+        add(t);
+    if (const char* p = ::getenv("PREFIX"))
+        add(std::string(p) + "/tmp");
+    add("/data/data/com.termux/files/usr/tmp");
+    add("/data/data/com.termux/files/usr/glibc/tmp");
+    add("/tmp");
+    return dirs;
+}
+
+// 在所有候选目录里扫 fex-*-stats，返回完整路径
 static std::vector<std::string> scan_fex_stats_shms(int self_pid) {
     std::vector<std::string> result;
-    DIR* d = opendir("/dev/shm");
-    if (!d) {
-        return result;
-    }
     const std::string self = shm_name_for_pid(self_pid);
-    while (auto* entry = readdir(d)) {
-        std::string name = entry->d_name;
-        if (name.rfind("fex-", 0) != 0) continue;
-        if (name == self) continue;            // 第 3 步已经试过
-        if (!is_shm_pid_alive(name)) continue; // 跳过已死进程的残留
-        result.push_back(std::move(name));
+    for (const std::string& dir : fex_shm_dirs()) {
+        DIR* d = opendir(dir.c_str());
+        if (!d)
+            continue;
+        while (auto* entry = readdir(d)) {
+            std::string name = entry->d_name;
+            if (name.rfind("fex-", 0) != 0) continue;
+            if (name == self) continue;            // 第 3 步已经试过
+            if (!is_shm_pid_alive(name)) continue; // 跳过已死进程的残留
+            result.push_back(dir + "/" + name);
+        }
+        closedir(d);
     }
-    closedir(d);
     return result;
 }
 
@@ -279,18 +311,42 @@ static void init_shm(int pid) {
     g_stats.page_size = sysconf(_SC_PAGESIZE);
     if (g_stats.page_size <= 0) g_stats.page_size = 4096;
 
-    // 组装候选名字：环境变量 → fex-<pid>-stats → /dev/shm 扫描
+    // 组装候选路径：环境变量 → fex-<pid>-stats → 目录扫描
+    // 名字形式的候选会在每个候选目录下各试一次。
+    const std::vector<std::string> dirs = fex_shm_dirs();
     std::vector<std::string> candidates;
+    auto add_path = [&candidates](const std::string& p) {
+        if (p.empty()) return;
+        for (const auto& x : candidates)
+            if (x == p) return;
+        candidates.push_back(p);
+    };
+    auto add_name = [&](const std::string& name) {
+        if (name.empty()) return;
+        if (name[0] == '/') {          // 已经带了路径
+            add_path(name);
+            return;
+        }
+        for (const std::string& d : dirs)
+            add_path(d + "/" + name);
+    };
     if (const char* env = ::getenv("MANGOHUD_FEX_SHM")) {
-        if (*env) candidates.emplace_back(env);
+        if (*env) add_name(env);
     }
     if (const char* env = ::getenv("MANGOHUD_FEX_PID")) {
         const int p = atoi(env);
-        if (p > 0) candidates.emplace_back(shm_name_for_pid(p));
+        if (p > 0) add_name(shm_name_for_pid(p));
     }
-    candidates.emplace_back(shm_name_for_pid(pid));
-    for (auto& name : scan_fex_stats_shms(pid)) {
-        candidates.push_back(std::move(name));
+    // MANGOHUD_FEX_SHM 给的是完整路径（含 '/'）时 → 唯一读取路径：
+    // 不再按 pid 猜、也不再扫描目录，只读这一个文件。
+    const char* env_shm_full = ::getenv("MANGOHUD_FEX_SHM");
+    if (env_shm_full && *env_shm_full && ::strchr(env_shm_full, '/')) {
+        // 前面的 add_name() 已经把这个完整路径加进来了，这里不再追加任何候选
+    } else {
+        add_name(shm_name_for_pid(pid));
+        for (auto& path : scan_fex_stats_shms(pid)) {
+            add_path(path);
+        }
     }
 
     int fd {-1};
@@ -301,20 +357,21 @@ static void init_shm(int pid) {
     std::string used_name;
 
     // Try and open a FEX stats file that relates to the PID in focus.
+    // 用普通 open()：shm_open 只会解析 /dev/shm，而这里还要找 Termux 的 tmp 目录。
     // If this fails then it is non-fatal, just means FEX isn't creating stats for that process.
-    for (const auto& name : candidates) {
-        fd = shm_open(name.c_str(), O_RDONLY, 0);
+    for (const auto& path : candidates) {
+        fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd != -1) {
-            used_name = name;
+            used_name = path;
             break;
         }
     }
     if (fd == -1) {
         fex_status = "Not Found!";
-        SPDLOG_DEBUG("FEX stats: no fex-*-stats in /dev/shm (tried {} candidates)", candidates.size());
+        SPDLOG_DEBUG("FEX stats: no fex-*-stats found ({} candidates over {} dirs)", candidates.size(), dirs.size());
         goto err;
     }
-    SPDLOG_INFO("FEX stats: using /dev/shm/{}", used_name);
+    SPDLOG_INFO("FEX stats: using {}", used_name);
 
     if (fstat(fd, &buf) == -1) {
         goto err;

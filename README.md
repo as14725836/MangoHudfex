@@ -764,6 +764,28 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_outline` | 面板描边强度，浮点，**默认 `0`（不画紫边）**；设为 `1.0` ≈ 3.5px |
 | `gl_hud_bind_default_fb` | OpenGL(GL/GLX) 路径下把 HUD 画到窗口默认帧缓冲（而非应用当前的 FBO），**默认关闭**；Wine + Mesa 下 HUD 闪烁时可开启 |
 
+### FEX-Emu 统计（`fex_stats`）的共享内存路径
+
+FEX 端以 **`fex-<pid>-stats`** 的名字 `shm_open` 创建统计共享内存（pid = 运行 FEX 的
+本机 aarch64 进程），默认落在 `/dev/shm`。Android/Termux 上 `/dev/shm` 未必存在或可写，
+容器/环境也可能把它放到 tmp 下，因此 HUD 依次在这些目录里查找：
+
+```
+$MANGOHUD_FEX_DIR  →  $MANGOHUD_FEX_SHM_DIR  →  /dev/shm  →  $TMPDIR
+→  $PREFIX/tmp  →  /data/data/com.termux/files/usr/tmp
+→  /data/data/com.termux/files/usr/glibc/tmp  →  /tmp
+```
+
+**唯一指定读取路径**（设了就只读它，不再扫描其它目录 / 不再按 pid 猜）：
+
+| 环境变量 | 作用 |
+|---|---|
+| `MANGOHUD_FEX_SHM=/data/data/com.termux/files/usr/tmp/fex-12345-stats` | 完整路径 → **只用这一个文件** |
+| `MANGOHUD_FEX_DIR=/data/data/com.termux/files/usr/tmp` | 指定唯一目录（文件名仍按 `fex-<pid>-stats` 规则） |
+| `MANGOHUD_FEX_PID=12345` | HUD 与 FEX 不是同一进程时指定 FEX 的 pid |
+
+命中的路径会以 INFO 级别打印：`FEX stats: using <路径>`。
+
 ### 字体
 
 FusionHUD 外观默认使用**随包安装的 DejaVu Sans Mono Bold**
