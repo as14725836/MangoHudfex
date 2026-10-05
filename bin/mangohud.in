@@ -19,6 +19,39 @@ MANGOHUD_LIB_NAME="@ld_libdir_mangohud@libMangoHud_shim.so"
 
 if [ "$1" = "--version" ]; then
     echo @version@
+    echo "FusionHUD appearance ported from FusionHUD by The412Banner"
+    echo "  https://github.com/The412Banner/FusionHUD  (GPL-3.0)"
+    exit 0
+fi
+
+# --credits / --about : 应用内致谢（关于）界面。
+# FusionHUD 以 GPL-3.0 + §7(b) 附加署名条款发布，要求在应用内致谢/关于界面中
+# 保留对 The412Banner 的署名及仓库链接 —— 这里就是 MangoHudfex 的该界面。
+if [ "$1" = "--credits" ] || [ "$1" = "--about" ]; then
+    cat <<'MANGO_CREDITS_EOF'
+MangoHudfex — a MangoHud fork
+
+  MangoHud (upstream)
+    https://github.com/flightlessmango/MangoHud
+    Copyright (c) 2020 flightlessmango — MIT
+
+  FusionHUD (appearance)
+    https://github.com/The412Banner/FusionHUD
+    Copyright (C) The412Banner — GPL-3.0
+    Ported files:
+      src/fusion_theme.hpp
+      src/fusion_layout.hpp
+      src/fusion_appearance.hpp
+      src/fusion_metrics.hpp
+
+  FEX-Emu (stats interface)
+    https://github.com/FEX-Emu/FEX — MIT
+    src/fex.cpp
+
+  License: this distribution includes GPL-3.0 code (FusionHUD) and must be
+  treated as a whole under GNU GPL v3.0. See ATTRIBUTION.md.
+
+MANGO_CREDITS_EOF
     exit 0
 fi
 

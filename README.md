@@ -693,7 +693,61 @@ Example output:
   - https://gitlab.freedesktop.org/drm/i915/kernel/-/issues/14153
   - https://gitlab.freedesktop.org/drm/xe/kernel/-/issues/4861
 - Integrated Intel GPUs are **limited** due to lack of hwmon interface (it's an issue on intel's side, [i915 source](https://github.com/torvalds/linux/blob/5fc31936081919a8572a3d644f3fbb258038f337/drivers/gpu/drm/i915/i915_hwmon.c#L914-L916), [xe source](https://github.com/torvalds/linux/blob/5fc31936081919a8572a3d644f3fbb258038f337/drivers/gpu/drm/xe/xe_hwmon.c#L824-L826))
-
 #### Panfrost and Panthor notes
 - GPU usage requires `echo N | sudo tee /sys/class/drm/renderD*/device/profiling`
   - Where N is a number, 1 for panfrost and 3 for panthor.
+
+
+---
+
+## Credits / 致谢
+
+**MangoHudfex** 是 MangoHud 的 fork，额外包含 **FusionHUD 外观移植** 与 **FEX-Emu 统计集成**。
+完整署名与许可说明见 [`ATTRIBUTION.md`](ATTRIBUTION.md)。
+
+### FusionHUD — 外观规范来源
+
+本项目的 FusionHUD 外观（调色板、面板几何、五档尺寸）移植自：
+
+> **FusionHUD** — <https://github.com/The412Banner/FusionHUD>
+> Copyright (C) **The412Banner** — GNU GPL v3.0（含 GPL-3.0 §7(b) 附加署名条款）
+
+依该附加条款，署名与仓库链接同时保留在：
+
+- **项目文档**：本 README 与 [`ATTRIBUTION.md`](ATTRIBUTION.md)
+- **应用内致谢界面**：运行 `mangohud --credits`（或 `mangohud --version`）查看；
+  另可在 HUD 上显示 `FusionHUD by The412Banner` 署名行（见下）
+
+### 在 HUD 上显示署名行
+
+FusionHUD 档位（`preset=10..14`）默认启用 `custom_text_center` 以在画面上显示署名：
+
+```ini
+preset=10
+# 上面已包含： custom_text_center=FusionHUD by The412Banner
+```
+
+想换成自己的文字，在配置文件里**放在 `preset=` 之后**覆盖即可：
+
+```ini
+preset=10
+custom_text_center=Your own text
+```
+
+### MangoHud
+
+> **MangoHud** — <https://github.com/flightlessmango/MangoHud> — MIT
+> Copyright (c) 2020 flightlessmango
+
+### FEX-Emu
+
+> **FEX-Emu** — <https://github.com/FEX-Emu/FEX> — MIT
+> `src/fex.cpp` 的统计数据接口对照 `FEXCore/include/FEXCore/Utils/SHMStats.h` 与
+> `Source/Windows/UnixLib/FEXUnixLib.cpp`。
+
+### ⚠️ 许可证
+
+上游 MangoHud 为 **MIT**，但本项目已并入 **GPL-3.0** 的 FusionHUD 代码，
+因此**分发本仓库（含二进制）时须整体按 GNU GPL v3.0 处理**（MIT 与 GPL 兼容，
+可并入 GPL 作品）。仓库根的 `LICENSE` 仍为上游 MIT 原文，尚未替换 —— 详见
+[`ATTRIBUTION.md`](ATTRIBUTION.md) 第 4 节。
