@@ -144,13 +144,9 @@ EXPORT_C_(unsigned int) eglDestroyContext(void* dpy, void* ctx)
     return pfn_eglDestroyContext(dpy, ctx);
 }
 
-EXPORT_C_(unsigned int) eglSwapBuffers(void* dpy, void* surf);
-EXPORT_C_(unsigned int) eglSwapBuffers(void* dpy, void* surf)
+// HUD 绘制前处理：所有 swap 变体（含 damage 版）共用。
+static void mangohud_egl_before_swap(void* dpy, void* surf)
 {
-    static int (*pfn_eglSwapBuffers)(void*, void*) = nullptr;
-    if (!pfn_eglSwapBuffers)
-        pfn_eglSwapBuffers = reinterpret_cast<decltype(pfn_eglSwapBuffers)>(get_egl_proc_address("eglSwapBuffers"));
-
     if (!is_blacklisted()) {
         static int (*pfn_eglQuerySurface)(void* dpy, void* surface, int attribute, int *value) = nullptr;
         if (!pfn_eglQuerySurface)
@@ -174,16 +170,65 @@ EXPORT_C_(unsigned int) eglSwapBuffers(void* dpy, void* surf)
         if (fps_limiter)
             fps_limiter->limit(true);
     }
+}
 
-    int res = pfn_eglSwapBuffers(dpy, surf);
-
+// HUD 绘制后处理（恢复 fps limiter）。
+static void mangohud_egl_after_swap()
+{
     if (!is_blacklisted()) {
         if (fps_limiter)
             fps_limiter->limit(false);
     }
-
+}
+EXPORT_C_(unsigned int) eglSwapBuffers(void* dpy, void* surf);
+EXPORT_C_(unsigned int) eglSwapBuffers(void* dpy, void* surf)
+{
+    static int (*pfn_eglSwapBuffers)(void*, void*) = nullptr;
+    if (!pfn_eglSwapBuffers)
+        pfn_eglSwapBuffers = reinterpret_cast<decltype(pfn_eglSwapBuffers)>(get_egl_proc_address("eglSwapBuffers"));
+    mangohud_egl_before_swap(dpy, surf);
+    int res = pfn_eglSwapBuffers(dpy, surf);
+    mangohud_egl_after_swap();
     return res;
 }
+
+// ---- damage 版 swap（EGL_KHR / EGL_EXT）----
+// KGSL(Adreno) 等驱动支持它，包装层会优先使用；上游没挂 →HUD 会隔帧不画（闪烁）。
+// 这里共用同一套绘制流程，并把 damage 区域放宽为整面（n_rects=0），
+// 保证 HUD 覆盖的像素每帧都被更新。
+static unsigned int mangohud_egl_swap_damage(void* dpy, void* surf, int* rects, int n_rects,
+                                            int (*pfn)(void*, void*, int*, int))
+{
+    if (!pfn)
+        return eglSwapBuffers(dpy, surf);   // 驱动不支持 →退回普通 swap
+    // 刻意忽略应用给的 damage 区域（rects/n_rects）：改为整面 present，
+    // 否则 HUD 覆盖的那块像素可能不在 damage 区间内，HUD 依旧会闪/残留。
+    (void)rects;
+    (void)n_rects;
+    mangohud_egl_before_swap(dpy, surf);
+    int res = pfn(dpy, surf, nullptr, 0);   // n_rects=0 即整面 damage
+    mangohud_egl_after_swap();
+    return res;
+}
+
+EXPORT_C_(unsigned int) eglSwapBuffersWithDamageKHR(void* dpy, void* surf, int* rects, int n_rects);
+EXPORT_C_(unsigned int) eglSwapBuffersWithDamageKHR(void* dpy, void* surf, int* rects, int n_rects)
+{
+    static int (*pfn)(void*, void*, int*, int) = nullptr;
+    if (!pfn)
+        pfn = reinterpret_cast<decltype(pfn)>(get_egl_proc_address("eglSwapBuffersWithDamageKHR"));
+    return mangohud_egl_swap_damage(dpy, surf, rects, n_rects, pfn);
+}
+
+EXPORT_C_(unsigned int) eglSwapBuffersWithDamageEXT(void* dpy, void* surf, int* rects, int n_rects);
+EXPORT_C_(unsigned int) eglSwapBuffersWithDamageEXT(void* dpy, void* surf, int* rects, int n_rects)
+{
+    static int (*pfn)(void*, void*, int*, int) = nullptr;
+    if (!pfn)
+        pfn = reinterpret_cast<decltype(pfn)>(get_egl_proc_address("eglSwapBuffersWithDamageEXT"));
+    return mangohud_egl_swap_damage(dpy, surf, rects, n_rects, pfn);
+}
+
 
 EXPORT_C_(void*) eglGetPlatformDisplay( unsigned int platform, void* native_display, const intptr_t* attrib_list);
 EXPORT_C_(void*) eglGetPlatformDisplay( unsigned int platform, void* native_display, const intptr_t* attrib_list)
@@ -296,6 +341,8 @@ static std::array<const func_ptr, 7> name_to_funcptr_map = {{
     ADD_HOOK(eglGetPlatformDisplayEXT),
     ADD_HOOK(eglGetProcAddress),
     ADD_HOOK(eglSwapBuffers),
+    ADD_HOOK(eglSwapBuffersWithDamageKHR),
+    ADD_HOOK(eglSwapBuffersWithDamageEXT),
     ADD_HOOK(eglTerminate)
 #undef ADD_HOOK
 }};
