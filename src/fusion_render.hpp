@@ -79,6 +79,67 @@ inline std::string fmt_f(float v, int width, int prec = 1) {
     return std::string(b);
 }
 
+/** 面板圆角：FusionHUD 原规范是 sp(8)，这里按"苹果卡片"观感适度放大，
+ *  并按面板短边的比例取值（Pill 仍用 height/2 的胶囊）。 */
+inline constexpr float kPanelRadiusRatio = 0.16f;
+inline constexpr float kPanelRadiusMaxSp = 20.0f;
+/** 超级椭圆指数：n=2 是普通圆弧，4~5 接近苹果的"连续曲率"圆角 */
+inline constexpr float kSquircleN = 4.0f;
+/** 每个角的细分数 */
+inline constexpr int kSquircleSeg = 10;
+
+/**
+ * 生成超级椭圆圆角矩形（squircle）的闭合路径，顺时针。
+ * 用于面板底与外框 —— 两者共用同一套几何，保证贴合与宽度一致。
+ */
+inline void squircle_path(std::vector<ImVec2>& out, float x0, float y0, float x1, float y1,
+                          float r, float n, int seg) {
+    out.clear();
+    const float w = x1 - x0;
+    const float h = y1 - y0;
+    const float rmax = std::min(w, h) * 0.5f;
+    if (r > rmax)
+        r = rmax;
+    if (r < 0.0f)
+        r = 0.0f;
+    if (n < 2.0f)
+        n = 2.0f;
+    if (seg < 1)
+        seg = 1;
+    const float e = 2.0f / n;
+
+    if (r <= 0.01f) {
+        out.push_back(ImVec2(x0, y0));
+        out.push_back(ImVec2(x1, y0));
+        out.push_back(ImVec2(x1, y1));
+        out.push_back(ImVec2(x0, y1));
+        return;
+    }
+
+    // 一个角的弧：中心 + 方向符号 + 起始/结束角度（度）
+    auto arc = [&](float cx, float cy, float sx, float sy, float a0, float a1) {
+        for (int i = 0; i <= seg; ++i) {
+            const float deg = a0 + (a1 - a0) * static_cast<float>(i) / static_cast<float>(seg);
+            const float a = deg * 3.14159265358979323846f / 180.0f;
+            // 必须取绝对值：float 精度下 cos(90°) 会得到 -4.4e-8，
+            // 而 pow(负数, 小数) 返回 NaN（方向由 sx/sy 负责）。
+            const float dx = r * std::pow(std::fabs(std::cos(a)), e);
+            const float dy = r * std::pow(std::fabs(std::sin(a)), e);
+            out.push_back(ImVec2(cx + sx * dx, cy + sy * dy));
+        }
+    };
+
+    out.push_back(ImVec2(x0 + r, y0));          // 上边左端
+    out.push_back(ImVec2(x1 - r, y0));          // 上边右端
+    arc(x1 - r, y0 + r, +1.0f, -1.0f, 90.0f, 0.0f);    // 右上角
+    out.push_back(ImVec2(x1, y1 - r));          // 右边下端
+    arc(x1 - r, y1 - r, +1.0f, +1.0f, 0.0f, 90.0f);    // 右下角
+    out.push_back(ImVec2(x0 + r, y1));          // 下边左端
+    arc(x0 + r, y1 - r, -1.0f, +1.0f, 90.0f, 0.0f);    // 左下角
+    out.push_back(ImVec2(x0, y0 + r));          // 左边上端
+    arc(x0 + r, y0 + r, -1.0f, -1.0f, 0.0f, 90.0f);    // 左上角（闭合）
+}
+
 /** 名称类文本（GPU 型号 / 驱动名等）的最大宽度（sp）。
  *  超过就换行 —— 否则一个长型号会把整块面板撑得很宽，甚至溢出磁贴。 */
 inline constexpr float kNameMaxWidthSp = 170.0f;
@@ -1454,22 +1515,49 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     if (!dl || f.content_w <= 0.0f || f.content_h <= 0.0f)
         return;
 
-    const ImVec2 p0(o.x, o.y);
-    const ImVec2 p1(o.x + f.content_w, o.y + f.content_h);
+    // 矩形对齐到整数像素：否则描边会落在半像素上，粗细忽 1 忽 2
+    const float x0 = std::floor(o.x + 0.5f);
+    const float y0 = std::floor(o.y + 0.5f);
+    const float x1 = x0 + std::floor(f.content_w + 0.5f);
+    const float y1 = y0 + std::floor(f.content_h + 0.5f);
+
+    // 绘制期间打开抗锯齿。MangoHud 在 convert_colors() 里把 style.AntiAliasedLines
+    // 关掉了，圆弧/圆角会出现锯齿与黑点；这里临时打开，画完恢复。
+    const ImDrawListFlags saved_flags = dl->Flags;
+    dl->Flags |= ImDrawListFlags_AntiAliasedLines | ImDrawListFlags_AntiAliasedFill;
 
     // 背景：纯黑 × bgOpacity（上游 onDraw 的 Color.argb(bgOpacity*255, 0, 0, 0)）
     float bg_a = p.background_alpha;
     bg_a = std::min(std::max(bg_a, 0.0f), 1.0f);
     const uint32_t bg = (static_cast<uint32_t>(std::lround(bg_a * 255.0f)) << 24) | 0x000000u;
-    const float radius = f.has_pill ? (f.content_h * kPillRadiusRatio) : f.M.sp(kBgRadiusSp);
-    dl->AddRectFilled(p0, p1, to_imcol(bg), radius);
 
-    // 描边：accent，宽 = intensity * sp(3.5)，内缩半宽（与上游一致）
-    const float sw = f.M.sp(kOutlineMaxSp * opt.outline);
+    // 圆角：Pill 用 height/2 的真圆（胶囊）；其余用按短边比例放大的 squircle
+    float radius;
+    float sq_n;
+    if (f.has_pill) {
+        radius = (y1 - y0) * kPillRadiusRatio;
+        sq_n = 2.0f;
+    } else {
+        radius = std::min((y1 - y0), (x1 - x0)) * kPanelRadiusRatio;
+        radius = std::min(std::max(radius, f.M.sp(kBgRadiusSp)), f.M.sp(kPanelRadiusMaxSp));
+        sq_n = kSquircleN;
+    }
+
+    std::vector<ImVec2> path;
+    squircle_path(path, x0, y0, x1, y1, radius, sq_n, kSquircleSeg);
+    dl->AddConvexPolyFilled(path.data(), static_cast<int>(path.size()), to_imcol(bg));
+
+    // 描边：与填充同形，仅向内偏移半个线宽 —— 外沿与面板边缘重合、宽度处处一致，
+    // 也就不会在角上留出黑缝。
+    float sw = f.M.sp(kOutlineMaxSp * opt.outline);
     if (sw > 0.0f) {
-        const float h = sw * 0.5f;
-        dl->AddRect(ImVec2(p0.x + h, p0.y + h), ImVec2(p1.x - h, p1.y - h),
-                    to_imcol(kColAccent), radius, 0, sw);
+        sw = std::max(1.0f, std::round(sw));
+        const float d = sw * 0.5f;
+        std::vector<ImVec2> ipath;
+        squircle_path(ipath, x0 + d, y0 + d, x1 - d, y1 - d,
+                      std::max(0.0f, radius - d), sq_n, kSquircleSeg);
+        dl->AddPolyline(ipath.data(), static_cast<int>(ipath.size()), to_imcol(kColAccent),
+                        true, sw);
     }
 
     // 磁贴底：白 × clamp(14*bgOpacity, 8, 40)
@@ -1529,6 +1617,8 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
                             f.M.sp(1.6f));
         }
     }
+
+    dl->Flags = saved_flags;   // 恢复外部设定的抗锯齿标志
 }
 
 } // namespace fr
