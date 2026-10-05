@@ -151,10 +151,11 @@ GPUS::GPUS(const overlay_params* early_params) {
                     }
 
                     // VRAM
+                    // 单位统一成 GiB（HUD 侧按 "%.1f GiB" 显示，FusionHUD 也按 GiB 读取）；
+                    // 探测不到写 -1（不可用），避免显示假的 0。
                     auto vram = fusionhud::detectVram();
-                    if (vram.usedMB >= 0) {
-                        adreno->metrics.sys_vram_used = vram.usedMB;
-                    }
+                    adreno->metrics.sys_vram_used =
+                        vram.usedMB >= 0 ? static_cast<float>(vram.usedMB) / 1024.0f : -1.0f;
 
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }

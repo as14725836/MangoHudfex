@@ -379,8 +379,11 @@ inline std::string fhFirstExisting(const char* const* paths) {
 // 探测一次即可，调用方（gpu.cpp 后台线程）应在循环外调用本函数
 inline GpuPaths gpuProbePaths() {
     static const char* use_paths[] = {
-        "/sys/class/kgsl/kgsl-3d0/gpubusy",                // Adreno KGSL: "<busy> <total>"
+        // 顺序很重要：gpu_busy_percentage 是"瞬时"占用率；
+        // gpubusy 是累计(忙/总)计数比值 = 开机以来的平均值，数值几乎不动，
+        // 所以瞬时值优先，避免 HUD 上显示一个恒定不变的数字。
         "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",    // Adreno: "37 %"
+        "/sys/class/kgsl/kgsl-3d0/gpubusy",                // Adreno KGSL: "<busy> <total>"
         "/sys/class/kgsl/kgsl-3d0/devfreq/gpu_load",
         "/sys/class/misc/mali0/device/utilization",        // Mali
         "/sys/class/devfreq/13000000.mali/device/gpuinfo",
@@ -538,23 +541,27 @@ inline VramInfo detectVram() {
             }
         }
     }
-    // 2) 退路：系统内存（Adreno 为 iGPU，无独立显存）
-    std::ifstream mi("/proc/meminfo");
-    if (mi.is_open()) {
-        std::string line;
-        long long total = -1, avail = -1;
-        while (std::getline(mi, line)) {
-            try {
-                if (line.rfind("MemTotal:", 0) == 0)          total = std::stoll(line.substr(9));
-                else if (line.rfind("MemAvailable:", 0) == 0) avail = std::stoll(line.substr(13));
-            } catch (...) {}
-            if (total > 0 && avail >= 0) break;
-        }
-        if (total > 0) {
-            info.totalMB = total / 1024;
-            if (avail >= 0) info.usedMB = (total - avail) / 1024;
+    // 2) 其它桌面/独立显卡路径
+    {
+        static const char* paths[] = {
+            "/sys/class/drm/card0/device/mem_info_vram_used",
+            "/sys/class/drm/card1/device/mem_info_vram_used",
+            nullptr
+        };
+        for (int i = 0; paths[i]; ++i) {
+            std::ifstream f(paths[i]);
+            if (!f.is_open()) continue;
+            std::string l;
+            if (!std::getline(f, l)) continue;
+            try { info.usedMB = std::stoll(l) / 1024; return info; } catch (...) {}
         }
     }
+    // 3) 探测不到就返回 -1（不可用）——注意：绝不能退回 /proc/meminfo 当显存，
+    //    那是系统内存，语义完全不同；而且 Android/Adreno 这类统一内存设备
+    //    本来就没有独立显存计数，假装有值只会让 HUD 显示假的 0 / 假数字。
+    //    调用方按 -1 处理：标准 HUD 显示 N/A，FusionHUD 直接不画这一行。
+    info.usedMB  = -1;
+    info.totalMB = -1;
     return info;
 }
 

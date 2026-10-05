@@ -729,7 +729,10 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
             src.gpu_load = g->metrics.load;
             src.gpu_temp = g->metrics.temp;
             src.gpu_core_clock = g->metrics.CoreClock;
-            src.vram_used_gib = g->metrics.sys_vram_used;
+            // sys_vram_used 的默认值是 0：Android/Adreno 等没有独立显存计数的
+            // 设备上它一直是 0，直接显示会变成假的 "0.00 GiB"。这里把"非正数"
+            // 统一归一成 -1 = 不可用，FusionHUD 便不会画这一行。
+            src.vram_used_gib = g->metrics.sys_vram_used > 0.0f ? g->metrics.sys_vram_used : -1.0f;
          }
          src.cpu_load = cpuStats.GetCPUDataTotal().percent;
          src.cpu_temp = cpuStats.GetCPUDataTotal().temp;

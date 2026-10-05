@@ -665,15 +665,23 @@ void HudElements::vram(){
 
                 ImguiNextColumnOrNewRow();
                 // Add gtt_used to vram usage for APUs
-                if (gpu->is_apu())
-                    right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%.1f", gpu->metrics.sys_vram_used + gpu->metrics.gtt_used);
-                else
-                    right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%.1f", gpu->metrics.sys_vram_used);
-                if (!HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_hud_compact]){
-                    ImGui::SameLine(0,1.0f);
-                    ImGui::PushFont(HUDElements.sw_stats->font_small);
-                    HUDElements.TextColored(HUDElements.colors.text, "GiB");
-                    ImGui::PopFont();
+                // 统一内存设备（Android/Adreno、部分 APU）没有独立显存计数，
+                // sys_vram_used 会一直是默认值 0 —— 直接显示就是假的 "0.0 GiB"。
+                // 这里显式显示 N/A，宁可没有数据也不要假数字。
+                const bool vram_known = gpu->metrics.sys_vram_used > 0.0f || gpu->metrics.gtt_used > 0.0f;
+                if (vram_known) {
+                    if (gpu->is_apu())
+                        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%.1f", gpu->metrics.sys_vram_used + gpu->metrics.gtt_used);
+                    else
+                        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%.1f", gpu->metrics.sys_vram_used);
+                    if (!HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_hud_compact]){
+                        ImGui::SameLine(0,1.0f);
+                        ImGui::PushFont(HUDElements.sw_stats->font_small);
+                        HUDElements.TextColored(HUDElements.colors.text, "GiB");
+                        ImGui::PopFont();
+                    }
+                } else {
+                    right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%s", "N/A");
                 }
 
                 if (gpu->metrics.memory_temp > -1 && HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_gpu_mem_temp]) {
