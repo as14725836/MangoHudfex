@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 #include <spdlog/spdlog.h>
 #include "real_dlsym.h"
 #include "loaders/loader_glx.h"
@@ -196,6 +197,23 @@ static void do_imgui_swap(void *dpy, void *drawable)
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
             SPDLOG_INFO("GL swap: drawable={} size={}x{} fbo={} ctx={}",
                         drawable, width, height, fbo, ctx);
+            // 同时写文件，手机端好取：
+            //   MANGOHUD_GL_DEBUG=/sdcard/Download/mangohud_gl.log
+            //   MANGOHUD_GL_DEBUG=1 则用默认路径 /sdcard/Download/mangohud_gl.log
+            static FILE* dbg_fp = nullptr;
+            static bool dbg_opened = false;
+            if (!dbg_opened) {
+                dbg_opened = true;
+                const char* p = getenv("MANGOHUD_GL_DEBUG");
+                const char* path =
+                    (p && *p && strcmp(p, "1") != 0) ? p : "/sdcard/Download/mangohud_gl.log";
+                dbg_fp = fopen(path, "w");
+            }
+            if (dbg_fp) {
+                fprintf(dbg_fp, "drawable=%p size=%ux%u fbo=%d ctx=%p\n",
+                        drawable, width, height, fbo, ctx);
+                fflush(dbg_fp);
+            }
         }
         SPDLOG_TRACE("swap buffers: {}x{}", width, height);
         imgui_render(gl_ctx, width, height);
