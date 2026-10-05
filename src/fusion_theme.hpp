@@ -54,6 +54,11 @@ constexpr float kPillRadiusRatio = 0.5f;   // Pill: height / 2f（胶囊）
 constexpr float kTileRadiusSp    = 6.0f;   // onDraw: sp(6f)
 constexpr float kTileBgBase      = 14.0f;  // Color.argb(14 * bgOpacity) → clamp[8,40]
 constexpr float kOutlineMaxSp    = 3.5f;   // strokeW = outlineIntensity * sp(3.5f)
+/** 画面边缘留白（px）：FusionHUD 外观默认不贴屏幕边缘。
+ *  上游的 10px 边距在用户设了 offset_x / offset_y 或 hud_no_margin 时会变成 0，
+ *  这里补一个下限，避免面板贴住屏幕边缘。 */
+constexpr float kEdgeInset = 12.0f;
+
 constexpr float kOutlineDefault  = 0.0f;   // 面板描边强度：默认 0 = 不画紫边；>0 时 × sp(3.5) 为线宽
 constexpr float kOutlineStrong   = 0.7f;   // "strong" → 70
 constexpr float kBgOpacityDefault = 0.8f;  // bgOpacity 默认 0.8

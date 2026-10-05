@@ -54,16 +54,3 @@ install_data(
   rename : ['presets.conf.example'],
   install_tag : 'doc',
 )
-
-# FusionHUD 专用等宽粗体（DejaVu Sans Mono Bold，Bitstream Vera 许可，可再分发）
-# 随包安装，运行时由 src/font.cpp 按优先级查找；找不到则回退到内嵌字体。
-install_data(
-  files('fonts/DejaVuSansMono-Bold.ttf'),
-  install_dir : join_paths(get_option('datadir'), 'mangohud', 'fonts'),
-  install_tag : 'runtime',
-)
-install_data(
-  files('fonts/LICENSE-DejaVu.txt'),
-  install_dir : join_paths(get_option('datadir'), 'mangohud', 'fonts'),
-  install_tag : 'doc',
-)

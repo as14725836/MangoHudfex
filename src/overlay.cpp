@@ -372,6 +372,11 @@ void position_layer(struct swapchain_stats& data, const struct overlay_params& p
    float margin = 10.0f;
    if (real_params->offset_x > 0 || real_params->offset_y > 0 || real_params->enabled[OVERLAY_PARAM_ENABLED_hud_no_margin])
       margin = 0.0f;
+   // FusionHUD 外观：不让面板贴住屏幕边缘。
+   // 用户显式给了 offset 时以用户为准（那时 margin 由上面的分支归 0，由 offset 定位）。
+   if (fusionhud::isFusionActive(*real_params) &&
+       real_params->offset_x <= 0 && real_params->offset_y <= 0)
+      margin = fusionhud::kEdgeInset;
 
    ImGui::SetNextWindowBgAlpha(real_params->background_alpha);
    ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);

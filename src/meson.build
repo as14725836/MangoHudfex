@@ -345,3 +345,17 @@ configure_file(input : '../bin/mangohud.in',
   install_dir : get_option('bindir'),
   install_tag : 'scripts',
 )
+
+# FusionHUD 外观默认等宽粗体（DejaVu Sans Mono Bold，Bitstream Vera 许可，可再分发）。
+# 放在 src/ 而不是 data/ ：data/ 被 get_option('include_doc') 包着，
+# 而打包流程用 -Dinclude_doc=false，整个 data/ 子目录不会被处理，字体就装不进包。
+install_data(
+  files('../data/fonts/DejaVuSansMono-Bold.ttf'),
+  install_dir : join_paths(get_option('datadir'), 'mangohud', 'fonts'),
+  install_tag : 'runtime',
+)
+install_data(
+  files('../data/fonts/LICENSE-DejaVu.txt'),
+  install_dir : join_paths(get_option('datadir'), 'mangohud', 'fonts'),
+  install_tag : 'runtime',
+)
