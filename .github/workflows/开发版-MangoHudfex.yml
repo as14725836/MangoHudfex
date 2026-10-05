@@ -1,6 +1,8 @@
 name: 开发版 MangoHudfex (aarch64)
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'  # 每5分钟运行一次
