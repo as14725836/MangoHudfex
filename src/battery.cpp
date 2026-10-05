@@ -13,7 +13,9 @@ void BatteryStats::numBattery() {
     fs::path path("/sys/class/power_supply/");
     for (auto& p : fs::directory_iterator(path)) {
         string fileName = p.path().filename();
-        if (fileName.find("BAT") != std::string::npos) {
+        // Android 上电池节点叫 battery / bms，而不是桌面的 BAT0/BAT1
+        if (fileName.find("BAT") != std::string::npos ||
+            fileName == "battery" || fileName == "bms") {
             battPath[batteryCount] = p.path();
             batteryCount += 1;
         }
@@ -26,7 +28,8 @@ void BatteryStats::update() {
     if (!batt_check) {
         numBattery();
         if (batt_count == 0) {
-            SPDLOG_ERROR("No battery found");
+            // 桌面无电池是正常情况，别当错误刷日志
+            SPDLOG_DEBUG("No battery found");
         }
     }
 

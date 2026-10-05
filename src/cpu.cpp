@@ -912,11 +912,15 @@ bool CPUStats::InitCpuPowerData() {
     if(m_cpuPowerData != nullptr)
         return true;
 
-    // only try to find a valid method 5 times
+    // 只尝试有限次数；失败后彻底放弃，避免每帧重复扫描 sysfs。
     static int retries = 0;
-    if (retries >= 5)
-        return true;
-
+    static bool unavailable = false;
+    if (unavailable)
+        return false;
+    if (retries >= 5) {
+        unavailable = true;
+        return false;
+    }
     retries++;
     
     std::string name, path;
@@ -970,7 +974,13 @@ bool CPUStats::InitCpuPowerData() {
     }
     
     if(cpuPowerData == nullptr) {
-        SPDLOG_ERROR("Failed to initialize CPU power data");
+        // 移动端/多数 ARM 设备没有 k10temp / zenpower / RAPL 功耗计数器，
+        // 这是正常情况：降为 debug 且只提示一次（外层之后会放弃重试）。
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            SPDLOG_DEBUG("CPU power data unavailable (no k10temp/zenpower/zenergy/xgene/RAPL on this device)");
+        }
         return false;
     }
 

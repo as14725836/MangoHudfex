@@ -1,6 +1,7 @@
 #include <array>
 #include <fstream>
 #include <map>
+#include <cctype>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <unistd.h>
@@ -46,8 +47,23 @@ void update_mem_temp() {
             if (read_line(path + dir + "/name") == "spd5118")
                 mem_temp_files.emplace_back(path + dir + "/temp1_input");
         }
+        // Android 没有 hwmon spd5118（DDR5 SPD 温度）；
+        // 退而求其次：找 thermal_zone 里名字含 ddr / mem 的。
+        if (mem_temp_files.empty()) {
+            const std::string tz = "/sys/class/thermal/";
+            auto zones = ls(tz.c_str(), "thermal_zone", LS_DIRS);
+            for (auto &z : zones) {
+                std::string type = read_line(tz + z + "/type");
+                std::string lower = type;
+                for (auto &c : lower)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (lower.find("ddr") != std::string::npos ||
+                    lower.find("mem") != std::string::npos)
+                    mem_temp_files.emplace_back(tz + z + "/temp");
+            }
+        }
         if (mem_temp_files.empty())
-            SPDLOG_ERROR("failed to find known ram temp sensors");
+            SPDLOG_DEBUG("no RAM temperature sensor found on this device");
     }
 
     int temp = 0;
