@@ -29,6 +29,7 @@
 #include "fex.h"
 #include "ftrace.h"
 #include "fusion_appearance.hpp"
+#include "fusion_render.hpp"
 
 #ifdef __linux__
 #include <libgen.h>
@@ -703,6 +704,65 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
       table_flags = ImGuiTableFlags_NoClip | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
 
    if (!real_params->no_display && !steam_focused && get_params()->table_columns){
+      if (real_params && fusionhud::isFusionActive(*real_params)) {
+         // ---- FusionHUD 档位：整块自绘（不再走 MangoHud 的表格渲染） ----
+         fusionhud::fr::Sources src;
+         src.fps = data.fps > 0.0 ? data.fps : ::fps;
+         src.frametime_ms = ::frametime;
+         src.gpu_name = data.gpuName;
+         src.engine_name_str = engine_name(data);
+         src.engine_version = data.engineVersion;
+         src.driver_name = data.driverName;
+         if (gpus && gpus->active_gpu()) {
+            auto g = gpus->active_gpu();
+            src.gpu_load = g->metrics.load;
+            src.gpu_temp = g->metrics.temp;
+            src.gpu_core_clock = g->metrics.CoreClock;
+            src.vram_used_gib = g->metrics.sys_vram_used;
+         }
+         src.cpu_load = cpuStats.GetCPUDataTotal().percent;
+         src.cpu_temp = cpuStats.GetCPUDataTotal().temp;
+         src.cpu_mhz = cpuStats.GetCPUDataTotal().cpu_mhz;
+         for (const CPUData& cd : cpuStats.GetCPUData()) {
+            src.core_pct.push_back(static_cast<int>(cd.percent));
+            src.core_mhz.push_back(cd.mhz);
+         }
+#ifdef __linux__
+         src.ram_used_gib = memused;
+         src.ram_total_gib = memmax;
+         src.swap_used_gib = swapused;
+         if (Battery_Stats.batt_count > 0) {
+            src.bat_pct = static_cast<int>(Battery_Stats.current_percent);
+            src.bat_watts = Battery_Stats.current_watt;
+         }
+#endif
+         fusionhud::fr::note_frametime(static_cast<float>(src.frametime_ms));
+         fusionhud::fr::note_graph_sample(static_cast<float>(src.frametime_ms));
+
+         fusionhud::fr::Options fo;
+         fo.scale = real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f;
+         fo.font = ImGui::GetFont();
+
+         fusionhud::fr::Frame fframe;
+         fusionhud::fr::build(fframe,
+                              fusionhud::fr::make_snapshot(src),
+                              fusionhud::fr::read_chips<swapchain_stats>(*real_params),
+                              fusionhud::currentFusionSize(*real_params),
+                              fo);
+
+         const ImVec2 fsize(std::max(fframe.content_w, 1.0f), std::max(fframe.content_h, 1.0f));
+         // 用本帧真实尺寸重新定位/定尺寸（覆盖调用方那次按 params->width/height 的布局）
+         position_layer(data, *real_params, fsize);
+         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+         ImGui::Begin("Main", &gui_open,
+                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+                      ImGuiWindowFlags_NoSavedSettings);
+         fusionhud::fr::draw(fframe, *real_params, ImGui::GetWindowDrawList(),
+                             ImGui::GetWindowPos(), fo);
+         ImGui::End();
+         ImGui::PopStyleVar();
+         window_size = fsize;
+      } else {
       ImGui::Begin("Main", &gui_open, ImGuiWindowFlags_NoDecoration);
       if (ImGui::BeginTable("hud", real_params->table_columns, table_flags )) {
          HUDElements.place = 0;
@@ -731,6 +791,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(data.main_window_pos.x + window_size.x - 15, data.main_window_pos.y + 15), 10, real_params->engine_color, 20);
       window_size = ImVec2(window_size.x, ImGui::GetCursorPosY() + 11.0f);
       ImGui::End();
+      } // end FusionHUD 分支
       if((now - logger->last_log_end()) < 12s && !logger->is_active())
          render_benchmark(data, params, window_size, height, now);
    }
