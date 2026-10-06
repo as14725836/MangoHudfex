@@ -13,7 +13,8 @@
  *   边框      0x66222B3E → 强调色 0xA374FF、宽 1.4     （上游 accent + intensity*sp(3.5)）
  *   文字描边  开启        → 关闭                        （上游没有文字描边，只有面板边框）
  *   数值色    阈值绿黄红 → 恒定 0xF2F5F9                （上游数值恒为 colValue）
- *   若干色值   BC8CFF/FF8CBC/EB5B5B/FFD54F/FFFFFF → C98BFF/FF7BC0/FF6B6B/FFAB5E/F2F5F9
+ *   若干色值   BC8CFF/FF8CBC/EB5B5B/FFD54F/FFFFFF → B08CFF/45D6C8/FF6B6B/FFD166/F2F5F9
+ *              （v2 起再次重排：按色相分离选色，暖色只留 FPS 一处红）
  *
  * Copyright (C) 2024  The FusionHUD-VK Authors
  * SPDX-License-Identifier: GPL-3.0
@@ -33,16 +34,19 @@ namespace fusionhud {
 // ============================================================================
 // 调色板 —— FusionHudView.kt 第 131~140 行，逐字对应
 // ============================================================================
-constexpr uint32_t kColGpu    = 0xFF5EE08A;  // colGpu   绿
-constexpr uint32_t kColCpu    = 0xFF58A6FF;  // colCpu   蓝
-constexpr uint32_t kColVram   = 0xFFC98BFF;  // colVram  紫
-constexpr uint32_t kColRam    = 0xFFFF7BC0;  // colRam   粉
-constexpr uint32_t kColBat    = 0xFFFFAB5E;  // colBat   橙
-constexpr uint32_t kColFps    = 0xFFFF6B6B;  // colFps   红
-constexpr uint32_t kColGraph  = 0xFF5EE08A;  // colGraph 绿（与 GPU 同色）
+// 色相分离：0(红) / 42(黄) / 150(绿) / 175(青) / 213(蓝) / 265(紫)
+// 旧版的 RAM 粉(330) 与 BAT 橙(30) 都压在这次暖色区里，六个标签里有三个偏红，
+// 远看就糊成一片。现在暖色只保留 FPS 一处红（低帧警示），其余全走冷色。
+constexpr uint32_t kColGpu    = 0xFF6EE7A0;  // colGpu   绿   h150
+constexpr uint32_t kColCpu    = 0xFF5AA9FF;  // colCpu   蓝   h213
+constexpr uint32_t kColVram   = 0xFFB08CFF;  // colVram  紫   h265
+constexpr uint32_t kColRam    = 0xFF45D6C8;  // colRam   青   h175（原粉 330）
+constexpr uint32_t kColBat    = 0xFFFFD166;  // colBat   黄   h 42（原橙 30）
+constexpr uint32_t kColFps    = 0xFFFF6B6B;  // colFps   红   h  0（唯一暖红）
+constexpr uint32_t kColGraph  = 0xFF6EE7A0;  // colGraph 绿（与 GPU 同色）
 constexpr uint32_t kColValue  = 0xFFFFFFFF;  // colValue 数值白
-constexpr uint32_t kColDim    = 0xFFB8C4D4;  // colDim   标签灰（略收，避免抢数值的视线）
-constexpr uint32_t kColUnit   = 0xFF8A96A8;  // 单位后缀（比标签再淡一档，形成层级）
+constexpr uint32_t kColDim    = 0xFFC2CEDA;  // colDim   标签灰（略收，避免抢数值的视线）
+constexpr uint32_t kColUnit   = 0xFF9AA7B8;  // 单位后缀（比标签再淡一档，形成层级）
 constexpr uint32_t kColLo     = 0xFFF7FAFF;  // colLo    AVG / 1% / 0.1% / 0.01%
 /** 面板描边色：AppThemeState.getCurrentAccentArgb() 的默认值 */
 constexpr uint32_t kColAccent = 0xFFA374FF;
