@@ -1808,6 +1808,11 @@ void HudElements::fex_stats()
         return;
     }
 
+    // 查找默认关闭时整块不显示，免得常驻一行无意义的 "N/A"
+    if (!fex::is_fex_stats_enabled()) {
+        return;
+    }
+
     ImGui::PushFont(HUDElements.sw_stats->font_small);
 
     if (HUDElements.params->fex_stats.status) {

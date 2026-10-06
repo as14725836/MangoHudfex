@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <cstring>
+#include <strings.h>
 #include <cstdlib>
 #include <cerrno>
 #include <unistd.h>
@@ -546,7 +547,38 @@ bool is_fex_pid_found() {
     return g_stats.pid != -1;
 }
 
+// 只在进程启动后读一次环境变量，无 per-frame 成本。
+bool is_fex_stats_enabled() {
+    static const bool enabled = [] {
+        if (const char* v = ::getenv("MANGOHUD_FEX_STATS")) {
+            if (*v == '\0')
+                return true;   // 只写了名字 = 开启
+            return !(v[0] == '0' && v[1] == '\0') &&
+                   strcasecmp(v, "false") != 0 &&
+                   strcasecmp(v, "off") != 0 &&
+                   strcasecmp(v, "no") != 0;
+        }
+        // 显式指定了共享内存/pid → 视为要用
+        return ::getenv("MANGOHUD_FEX_SHM") != nullptr ||
+               ::getenv("MANGOHUD_FEX_DIR") != nullptr ||
+               ::getenv("MANGOHUD_FEX_SHM_DIR") != nullptr ||
+               ::getenv("MANGOHUD_FEX_PID") != nullptr;
+    }();
+    return enabled;
+}
+
 void update_fex_stats() {
+    // 默认不做任何查找：关闭时这里零开销（连 getenv 都只读一次）。
+    if (!is_fex_stats_enabled()) {
+        static bool announced = false;
+        if (!announced) {
+            announced = true;
+            fex_status = "N/A";
+            SPDLOG_DEBUG("FEX stats: lookup disabled (set MANGOHUD_FEX_STATS=1 to enable)");
+        }
+        return;
+    }
+
     auto gs_pid = HUDElements.g_gamescopePid > 0 ? HUDElements.g_gamescopePid : ::getpid();
     if (gs_pid < 1) {
         // No PID yet.

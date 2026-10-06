@@ -12,6 +12,14 @@ bool is_fex_pid_found();
 const char* get_fex_app_type();
 
 extern const char* fex_status;
+
+/**
+ * FEX 统计查找是否开启。
+ * 默认关闭：查找会 opendir 十几个候选目录（/dev/shm 下可能有几百项），
+ * 拿不到数据时纯属浪费。需要时设 MANGOHUD_FEX_STATS=1，
+ * 或显式给出 MANGOHUD_FEX_SHM / MANGOHUD_FEX_DIR / MANGOHUD_FEX_PID。
+ */
+bool is_fex_stats_enabled();
 extern std::string fex_version;
 
 extern std::vector<float> fex_load_data;
