@@ -14,21 +14,45 @@
  * 全都找不到时返回空串，由调用方回退到内嵌字体。
  */
 #include "hud_i18n.hpp"
+#include <cstdio>   // is_loadable_ttf 用 FILE/fread
+
+// stb_truetype 只支持 TrueType 轮廓：文件头 0x00010000（或 'true'）。
+// OTF/CFF（'OTTO'）、字体集合 TTC（'ttcf'）、WOFF 等喂给 ImGui 会让
+// stbtt_InitFont 解析失败并直接断言 —— 表现就是 HUD 黑屏。这里先按文件头筛掉。
+static bool is_loadable_ttf(const std::string& path) {
+   if (path.empty())
+      return false;
+
+   FILE* f = fopen(path.c_str(), "rb");
+   if (!f)
+      return false;
+
+   unsigned char h[4] = { 0, 0, 0, 0 };
+   const size_t got = fread(h, 1, 4, f);
+   fclose(f);
+   if (got != 4)
+      return false;
+
+   const unsigned int tag = ((unsigned int)h[0] << 24) | ((unsigned int)h[1] << 16) |
+                            ((unsigned int)h[2] << 8) | (unsigned int)h[3];
+   return tag == 0x00010000u || tag == 0x74727565u;
+}
 
 static std::string fusion_font_path(const overlay_params& params) {
-   if (!params.font_file.empty() && file_exists(params.font_file))
+   if (is_loadable_ttf(params.font_file))
       return params.font_file;   // 用户在配置里指定了字体，尊重其选择
 
    if (const char* env = std::getenv("MANGOHUD_FUSION_FONT")) {
-      if (*env && file_exists(env))
+      if (*env && is_loadable_ttf(env))
          return env;
    }
 
    static const char* kCandidates[] = {
-      // 安卓自带中文字体优先：界面标签是中文，需要汉字覆盖
-      "/system/fonts/NotoSansSC-Regular.otf",
-      "/system/fonts/NotoSansCJKsc-Regular.otf",
-      "/system/fonts/NotoSansCJK-Regular.ttc",
+      // 安卓自带中文字体优先：界面标签是中文，需要汉字覆盖。
+      // 注意：只能放 TrueType（.ttf）——Noto 的 .otf/.ttc 是 CFF/集合，
+      // stb_truetype 解析会失败并让 HUD 黑屏（已被 is_loadable_ttf 兜住）。
+      "/system/fonts/NotoSansCJK-Regular.ttf",
+      "/system/fonts/NotoSansSC-Regular.ttf",
       "/system/fonts/DroidSansFallbackFull.ttf",
       "/system/fonts/DroidSansFallback.ttf",
       // 随包安装（termux-glibc 扁平布局 / usr 布局 / 通用前缀）
@@ -45,7 +69,7 @@ static std::string fusion_font_path(const overlay_params& params) {
       "/system/fonts/NotoSansMono-Regular.ttf",
    };
    for (const char* p : kCandidates) {
-      if (file_exists(p))
+      if (is_loadable_ttf(p))
          return p;
    }
    return std::string();
@@ -167,7 +191,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    };
 
    // ImGui takes ownership of the data, no need to free it
-   if (!params.font_file.empty() && file_exists(params.font_file)) {
+   if (is_loadable_ttf(params.font_file)) {
       font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size, nullptr, same_font && text_same_size ? glyph_ranges.Data : default_range);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
       fusion.small = bake_fusion(size_small);
@@ -210,7 +234,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    if (font_file_text.empty())
       font_file_text = params.font_file;
 
-   if ((!same_font || !text_same_size) && file_exists(font_file_text))
+   if ((!same_font || !text_same_size) && is_loadable_ttf(font_file_text))
       text_font = font_atlas->AddFontFromFileTTF(font_file_text.c_str(), font_size_text, nullptr, glyph_ranges.Data);
    else
       text_font = font_atlas->Fonts[0];
