@@ -10,6 +10,8 @@
 #include <filesystem.h>
 // #include <sys/stat.h>
 #include "overlay.h"
+#include <chrono>
+#include <cstdlib>
 #include "cpu.h"
 #include "gpu.h"
 #include "hud_elements.h"
@@ -243,6 +245,24 @@ struct hw_info_updater
 
    void update(const struct overlay_params* params_, uint32_t vendorID_)
    {
+      // 节流：温度/频率/电流/内存这些系统读数没必要每帧重扫。
+      // 加载画面往往不限帧（几百 fps），那时每帧都唤醒后台线程扫一遍
+      // sysfs/procfs，会跟游戏抢 CPU 与 IO，直接拖慢加载。
+      // 默认限制到 10Hz；MANGOHUD_HW_UPDATE_MS=0 可恢复旧行为（每帧扫）。
+      static const long long interval_ms = []{
+         if (const char* e = std::getenv("MANGOHUD_HW_UPDATE_MS"))
+            return std::atoll(e);
+         return 100LL;
+      }();
+      if (interval_ms > 0) {
+         static std::chrono::steady_clock::time_point last{};
+         const auto now = std::chrono::steady_clock::now();
+         if (last.time_since_epoch().count() != 0 &&
+             std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count() < interval_ms)
+            return;
+         last = now;
+      }
+
       std::unique_lock<std::mutex> lk_hw_updating(m_hw_updating, std::try_to_lock);
       if (lk_hw_updating.owns_lock())
       {
