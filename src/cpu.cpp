@@ -237,7 +237,8 @@ bool CPUStats::Init()
             cpu.totalPeriod = 1;
             m_cpuData.push_back(cpu);
         }
-        SPDLOG_WARN("Could not read /proc/stat, created {} default CPU entries", num_cpus);
+        // Android 上 /proc/stat 常被 SELinux 拒读，这是预期情况，不当警告刷屏
+        SPDLOG_DEBUG("Could not read /proc/stat, created {} default CPU entries", num_cpus);
     }
 
 #ifndef TEST_ONLY
@@ -812,7 +813,7 @@ bool CPUStats::GetCpuFile() {
         return false;
     }
 
-    SPDLOG_INFO("hwmon: using input: {}", input);
+    SPDLOG_DEBUG("hwmon: using input: {}", input);
     m_cpuTempFile = fopen(input.c_str(), "r");
 
     return true;

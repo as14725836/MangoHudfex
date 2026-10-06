@@ -373,7 +373,10 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
 
    const std::string fusion_ttf = fusion_font_path(params);
    if (!fusion_ttf.empty())
-      fprintf(stderr, "[MangoHud] HUD font: %s\n", fusion_ttf.c_str());
+      // 默认静默（排查字体时用 MANGOHUD_FONT_DEBUG=1 打开）
+      if (const char* fdbg = std::getenv("MANGOHUD_FONT_DEBUG"))
+         if (*fdbg && std::string(fdbg) != "0")
+            fprintf(stderr, "[MangoHud] HUD font: %s\n", fusion_ttf.c_str());
    auto bake_fusion = [&](float px) -> ImFont* {
       if (!fusion_ttf.empty())
          return font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), px, &fusion_config, fusion_ranges);
