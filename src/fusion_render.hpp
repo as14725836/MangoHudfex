@@ -640,7 +640,9 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
     g.col = kColDim;
     f.glyphs.push_back(g);
 
-    f.content_h = footer_top + f.M.line_h(px) + pad * 0.5f;
+    // 底部只留一点边：原来是 2×ascent + pad/2（≈时钟字高的 1.4 倍），
+    // 会看成“时钟下面空一大块”。改成贴着字形底 + 6sp。
+    f.content_h = g.top + f.M.line_h(px) + f.M.sp(6.0f);
     f.content_w = std::max(f.content_w, pad + w + f.M.sp(kRightInsetSp));
 }
 
