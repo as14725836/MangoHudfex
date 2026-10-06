@@ -16,6 +16,8 @@
 #include "hud_i18n.hpp"
 #include <cstdio>   // is_loadable_ttf 用 FILE/fread
 #include <cstring>   // strchr/strstr
+#include <cctype>    // tolower
+#include <dirent.h>  // opendir/readdir
 
 // stb_truetype 只支持 TrueType 轮廓：文件头 0x00010000（或 'true'）。
 // OTF/CFF（'OTTO'）、字体集合 TTC（'ttcf'）、WOFF 等喂给 ImGui 会让
@@ -37,6 +39,44 @@ static bool is_loadable_ttf(const std::string& path) {
    const unsigned int tag = ((unsigned int)h[0] << 24) | ((unsigned int)h[1] << 16) |
                             ((unsigned int)h[2] << 8) | (unsigned int)h[3];
    return tag == 0x00010000u || tag == 0x74727565u;
+}
+
+// 扫描目录里第一个可用的 TrueType 字体。
+// 优先带 CJK / SC / Han / Noto / WQY / Micro 字样的（多半含汉字）；
+// .ttc / .otf 一律跳过 —— stb_truetype 解析不了 CFF/字体集合。
+static std::string first_usable_font(const std::string& dir) {
+   DIR* d = opendir(dir.c_str());
+   if (!d)
+      return {};
+
+   std::string first, preferred;
+   while (auto* e = readdir(d)) {
+      std::string name = e->d_name;
+      if (name.size() < 5 || name[0] == '.')
+         continue;
+
+      std::string low = name;
+      for (char& c : low)
+         c = (char)tolower((unsigned char)c);
+      if (low.size() < 4 || low.compare(low.size() - 4, 4, ".ttf") != 0)
+         continue;
+
+      const std::string path = dir + "/" + name;
+      if (!is_loadable_ttf(path))
+         continue;
+
+      if (first.empty())
+         first = path;
+
+      if (low.find("cjk") != std::string::npos || low.find("sc") != std::string::npos ||
+          low.find("han") != std::string::npos || low.find("noto") != std::string::npos ||
+          low.find("wqy") != std::string::npos || low.find("micro") != std::string::npos) {
+         preferred = path;
+         break;
+      }
+   }
+   closedir(d);
+   return preferred.empty() ? first : preferred;
 }
 
 // libMangoHud.so 自己所在目录：用来定位随包字体，不受安装前缀影响。
@@ -77,7 +117,22 @@ static std::string fusion_font_path(const overlay_params& params) {
          return env;
    }
 
-   // 先按 libMangoHud.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
+   // 1) 先扫常用字体目录（Termux glibc 的 share/fonts 放最前）
+   static const char* kFontDirs[] = {
+      "/data/data/com.termux/files/usr/glibc/share/fonts",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts",
+      "/data/data/com.termux/files/usr/share/fonts",
+      "/data/data/com.termux/files/usr/share/mangohud/fonts",
+      "/usr/share/mangohud/fonts",
+      "/usr/local/share/mangohud/fonts",
+      "/usr/share/fonts",
+      "/usr/local/share/fonts",
+   };
+   for (const char* dir : kFontDirs)
+      if (std::string p = first_usable_font(dir); !p.empty())
+         return p;
+
+   // 2) 再按 libMangoHud.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
    if (const std::string lib_dir = libmangohud_dir(); !lib_dir.empty()) {
       static const char* kRel[] = {
          "../../share/mangohud/fonts/",   // lib/mangohud/ 安装（本包/多数发行版）
