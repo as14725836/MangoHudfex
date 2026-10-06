@@ -104,9 +104,11 @@ static std::string first_usable_font(const std::string& dir) {
       if (first.empty())
          first = path;
 
-      if (low.find("cjk") != std::string::npos || low.find("sc") != std::string::npos ||
-          low.find("han") != std::string::npos || low.find("noto") != std::string::npos ||
-          low.find("wqy") != std::string::npos || low.find("micro") != std::string::npos) {
+      // 注意：不要用 "sc" —— CarroisGothicSC 之类的 SC 是 Small Caps，没有汉字。
+      if (low.find("cjk") != std::string::npos || low.find("han") != std::string::npos ||
+          low.find("wqy") != std::string::npos || low.find("micro") != std::string::npos ||
+          low.find("hei") != std::string::npos || low.find("ming") != std::string::npos ||
+          low.find("fallback") != std::string::npos) {
          preferred = path;
          break;
       }
@@ -153,17 +155,16 @@ static std::string fusion_font_path(const overlay_params& params) {
          return env;
    }
 
-   // 0) 先按 fontconfig 的 fonts.conf 走（它写明了系统字体到底在哪）
-   static const char* kFontConf[] = {
-      "/data/data/com.termux/files/usr/glibc/etc/fonts/fonts.conf",
-      "/data/data/com.termux/files/usr/etc/fonts/fonts.conf",
-      "/etc/fonts/fonts.conf",
+   // 随包中文子集：固定位置先试一遍（不依赖 fontconfig / 安装前缀）
+   static const char* kCjkFirst[] = {
+      "/data/data/com.termux/files/usr/glibc/share/fonts/MangoHud-CJK.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/data/data/com.termux/files/usr/share/fonts/MangoHud-CJK.ttf",
+      "/usr/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/usr/local/share/mangohud/fonts/MangoHud-CJK.ttf",
    };
-   std::vector<std::string> fc_dirs;
-   for (const char* conf : kFontConf)
-      fontconfig_dirs(conf, fc_dirs);
-   for (const std::string& dir : fc_dirs)
-      if (std::string p = first_usable_font(dir); !p.empty())
+   for (const char* p : kCjkFirst)
+      if (is_loadable_ttf(p))
          return p;
 
    // 1) 再扫常用字体目录（Termux glibc 的 share/fonts 放最前）
@@ -180,6 +181,20 @@ static std::string fusion_font_path(const overlay_params& params) {
    for (const char* dir : kFontDirs)
       if (std::string p = first_usable_font(dir); !p.empty())
          return p;
+
+   // fontconfig 的 fonts.conf（把 <dir> 列出的目录也扫一遍） 的 fonts.conf 走（它写明了系统字体到底在哪）
+   static const char* kFontConf[] = {
+      "/data/data/com.termux/files/usr/glibc/etc/fonts/fonts.conf",
+      "/data/data/com.termux/files/usr/etc/fonts/fonts.conf",
+      "/etc/fonts/fonts.conf",
+   };
+   std::vector<std::string> fc_dirs;
+   for (const char* conf : kFontConf)
+      fontconfig_dirs(conf, fc_dirs);
+   for (const std::string& dir : fc_dirs)
+      if (std::string p = first_usable_font(dir); !p.empty())
+         return p;
+
 
    // 2) 再按 libMangoHud.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
    if (const std::string lib_dir = libmangohud_dir(); !lib_dir.empty()) {
