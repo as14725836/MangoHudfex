@@ -15,6 +15,7 @@
  */
 #include "hud_i18n.hpp"
 #include <cstdio>   // is_loadable_ttf 用 FILE/fread
+#include <cstring>   // strchr/strstr
 
 // stb_truetype 只支持 TrueType 轮廓：文件头 0x00010000（或 'true'）。
 // OTF/CFF（'OTTO'）、字体集合 TTC（'ttcf'）、WOFF 等喂给 ImGui 会让
@@ -38,6 +39,35 @@ static bool is_loadable_ttf(const std::string& path) {
    return tag == 0x00010000u || tag == 0x74727565u;
 }
 
+// libMangoHud.so 自己所在目录：用来定位随包字体，不受安装前缀影响。
+// 读 /proc/self/maps 而不是 dladdr()，避免额外链接依赖。
+static std::string libmangohud_dir() {
+   FILE* f = fopen("/proc/self/maps", "r");
+   if (!f)
+      return {};
+
+   char line[1024];
+   std::string hit;
+   while (fgets(line, sizeof(line), f)) {
+      char* p = strchr(line, '/');
+      if (!p)
+         continue;
+      size_t len = strlen(p);
+      while (len > 0 && (p[len - 1] == '\n' || p[len - 1] == '\r' || p[len - 1] == ' '))
+         p[--len] = '\0';
+      if (strstr(p, "libMangoHud.so")) {
+         hit = p;
+         break;
+      }
+   }
+   fclose(f);
+
+   const auto slash = hit.find_last_of('/');
+   if (hit.empty() || slash == std::string::npos)
+      return {};
+   return hit.substr(0, slash);
+}
+
 static std::string fusion_font_path(const overlay_params& params) {
    if (is_loadable_ttf(params.font_file))
       return params.font_file;   // 用户在配置里指定了字体，尊重其选择
@@ -45,6 +75,26 @@ static std::string fusion_font_path(const overlay_params& params) {
    if (const char* env = std::getenv("MANGOHUD_FUSION_FONT")) {
       if (*env && is_loadable_ttf(env))
          return env;
+   }
+
+   // 先按 libMangoHud.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
+   if (const std::string lib_dir = libmangohud_dir(); !lib_dir.empty()) {
+      static const char* kRel[] = {
+         "../../share/mangohud/fonts/",   // lib/mangohud/ 安装（本包/多数发行版）
+         "../share/mangohud/fonts/",      // lib/ 直接安装
+         "../lib/mangohud/fonts/",        // 字体与库放一起
+         "/",                             // 字体就在库旁边
+      };
+      static const char* kNames[] = {
+         "MangoHud-CJK.ttf",              // 随包中文子集（优先）
+         "DejaVuSansMono-Bold.ttf",
+      };
+      for (const char* rel : kRel)
+         for (const char* name : kNames) {
+            std::string p = lib_dir + "/" + rel + name;
+            if (is_loadable_ttf(p))
+               return p;
+         }
    }
 
    static const char* kCandidates[] = {
