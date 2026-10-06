@@ -114,37 +114,46 @@ float BatteryStats::getPower() {
             return 0.0f;
         }
 
-        // Prefer power_now (µW) when available.
-        if (fs::exists(power_now)) {
-            std::ifstream input(power_now);
-            std::string line;
-            if (std::getline(input, line)) {
-                power_w += std::fabs(stof(line)) / 1000000.0f;
-            }
-            continue;
-        }
+        // ① 优先自己算：P = I × V。
+        //    不要直接信 power_now：部分厂商驱动会算错（本机 pmic_glink 那个节点
+        //    报 49.6W，而 I×V 只有 3.3W）。功耗是物理量，电流×电压最可靠。
+        //    单位自适应：电流可能是 µA 或 mA，电压可能是 µV 或 mV。
+        float i_raw = 0.0f;
+        float v_raw = 0.0f;
+        float watt = 0.0f;
 
         if (fs::exists(current_now) && fs::exists(voltage_now)) {
-            float i_ua = 0.0f;
-            float v_uv = 0.0f;
-
             {
                 std::ifstream input(current_now);
                 std::string line;
                 if (std::getline(input, line)) {
-                    i_ua = stof(line);
+                    i_raw = std::fabs(stof(line));
                 }
             }
             {
                 std::ifstream input(voltage_now);
                 std::string line;
                 if (std::getline(input, line)) {
-                    v_uv = stof(line);
+                    v_raw = std::fabs(stof(line));
                 }
             }
 
-            power_w += (std::fabs(i_ua) * std::fabs(v_uv)) * 1e-12f;
+            const float i_a = (i_raw > 200000.0f) ? i_raw * 1e-6f : i_raw * 1e-3f;
+            const float v_v = (v_raw > 10000.0f) ? v_raw * 1e-6f : v_raw * 1e-3f;
+            watt = i_a * v_v;
         }
+
+        // ② 只有拿不到电流/电压时才退回 power_now（µW）
+        if (watt <= 0.0f && fs::exists(power_now)) {
+            std::ifstream input(power_now);
+            std::string line;
+            if (std::getline(input, line)) {
+                watt = std::fabs(stof(line)) / 1000000.0f;
+            }
+        }
+
+        SPDLOG_DEBUG("battery[{}]: {:.2f} W  (I={:.0f}, V={:.0f})", i, watt, i_raw, v_raw);
+        power_w += watt;
     }
 
     return power_w;
