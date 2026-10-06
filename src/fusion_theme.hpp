@@ -58,6 +58,7 @@ constexpr float kOutlineMaxSp    = 3.5f;   // strokeW = outlineIntensity * sp(3.
  *  上游的 10px 边距在用户设了 offset_x / offset_y 或 hud_no_margin 时会变成 0，
  *  这里补一个下限，避免面板贴住屏幕边缘。 */
 constexpr float kEdgeInset = 12.0f;
+constexpr float kRightInsetSp = 5.0f;   // 面板右侧内缩（比 pad 小）
 
 constexpr float kOutlineDefault  = 0.0f;   // 面板描边强度：默认 0 = 不画紫边；>0 时 × sp(3.5) 为线宽
 constexpr float kOutlineStrong   = 0.7f;   // "strong" → 70

@@ -627,10 +627,10 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
     if (center_x >= 0.0f) {
         x = center_x - w * 0.5f;
         const float lo = pad;
-        const float hi = std::max(pad, f.content_w - pad - w);
+        const float hi = std::max(pad, f.content_w - f.M.sp(kRightInsetSp) - w);
         x = std::min(std::max(x, lo), hi);
     } else {
-        x = std::max(pad, f.content_w - pad - w);
+        x = std::max(pad, f.content_w - f.M.sp(kRightInsetSp) - w);
     }
     Glyph g;
     g.x = x;
@@ -641,7 +641,7 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
     f.glyphs.push_back(g);
 
     f.content_h = footer_top + f.M.line_h(px) + pad * 0.5f;
-    f.content_w = std::max(f.content_w, pad + w + pad);
+    f.content_w = std::max(f.content_w, pad + w + f.M.sp(kRightInsetSp));
 }
 
 /**
@@ -668,7 +668,7 @@ inline void add_credit_line(Frame& f, float pad) {
     g.col = kColDim;
     f.glyphs.push_back(g);
     f.content_h += f.M.line_h(px) + pad * 0.5f;
-    f.content_w = std::max(f.content_w, pad + w + pad);
+    f.content_w = std::max(f.content_w, pad + w + f.M.sp(kRightInsetSp));
 }
 
 inline std::string api_label(const Snapshot& s, const Chips& c) {
@@ -897,7 +897,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         y += gh;
     }
 
-    f.content_w = max_right + pad;
+    f.content_w = max_right + f.M.sp(kRightInsetSp);
     f.content_h = y + pad;
     add_subtle_clock(f, c.clock, pad);
 }
@@ -1127,7 +1127,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     if (col != 0)
         y += tile_h + tile_gap;
 
-    f.content_w = pad + full_w + pad;
+    f.content_w = pad + full_w + f.M.sp(kRightInsetSp);
     f.content_h = y + (pad - tile_gap);
     add_subtle_clock(f, c.clock, pad);
 }
@@ -1231,7 +1231,7 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     const float stack_total_h = n * stk_h + std::max(0.0f, n - 1.0f) * stk_line_gap;
     const float inner_h = std::max(left_col_h, stack_total_h);
 
-    f.content_w = pad + left_block_w + mid_gap + stack_w + pad;
+    f.content_w = pad + left_block_w + mid_gap + stack_w + f.M.sp(kRightInsetSp);
     f.content_h = pad + inner_h + pad;
 
     float ly = pad + (inner_h - left_col_h) * 0.5f;
@@ -1282,7 +1282,7 @@ inline void build_minimal(Frame& f, const Snapshot& s, const Chips& c) {
     const float gh = f.M.sp(kGraphHeightSp);
     const float inner = std::max(std::max(big_w, sub_w), c.graph ? gw : 0.0f);
 
-    f.content_w = inner + pad * 2.0f;
+    f.content_w = inner + pad + f.M.sp(kRightInsetSp);
     float y = pad;
     f.place(pad + (inner - big_w) * 0.5f, y + f.M.ascent(big_px), big);
     y += big_h + line_gap;
@@ -1542,7 +1542,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         y += f.M.line_h(band_px);
     }
 
-    f.content_w = max_right + pad;
+    f.content_w = max_right + f.M.sp(kRightInsetSp);
     f.content_h = y + pad;
     add_subtle_clock(f, c.clock, pad);
 }
