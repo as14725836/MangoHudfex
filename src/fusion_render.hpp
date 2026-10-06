@@ -852,11 +852,14 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
             lw = std::max(lw, f.M.measure(r.label.text, row_px));
             vw = std::max(vw, f.M.run_w(r.vals));
         }
-        const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
+        // 型号整行左对齐：占“标签”位（与「显卡」「ZINK」等第一个字同一列），
+        // 不再缩进到数值列。可用宽度 = 标签列 + 间隔 + 数值列，不额外撑宽面板。
+        const std::vector<std::string> ml =
+            wrap_name_to(f.M, model_txt, row_px, lw + lv_gap + vw);
         std::vector<Row> mrows;
-        mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        mrows.push_back(Row{Span{ml[0], kColValue, row_px}, {}, true});
         for (size_t i = 1; i < ml.size(); ++i)
-            mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
+            mrows.push_back(Row{Span{ml[i], kColValue, row_px}, {}, true});
         rows.insert(rows.begin(), mrows.begin(), mrows.end());
     }
 
