@@ -657,7 +657,19 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
 
     // 底部只留一点边：原来是 2×ascent + pad/2（≈时钟字高的 1.4 倍），
     // 会看成“时钟下面空一大块”。改成贴着字形底 + 6sp。
-    f.content_h = std::max(f.content_h, g.top + f.M.line_h(px) + f.M.sp(6.0f));
+    // 底部收紧：以“实际最下面的内容”为准，只留 6sp（原调用方还会再多留一个 pad）
+    if (!f.has_pill) {
+        float lowest = g.top + f.M.line_h(px);
+        for (const Glyph& gg : f.glyphs)
+            lowest = std::max(lowest, gg.top + f.M.line_h(gg.px));
+        if (f.has_graph)
+            lowest = std::max(lowest, f.graph.y1);
+        for (const Rect& tr : f.tiles)
+            lowest = std::max(lowest, tr.y1);
+        f.content_h = lowest + f.M.sp(6.0f);
+    } else {
+        f.content_h = std::max(f.content_h, g.top + f.M.line_h(px) + f.M.sp(6.0f));
+    }
     f.content_w = std::max(f.content_w, pad + w + f.M.sp(kRightInsetSp));
 }
 
