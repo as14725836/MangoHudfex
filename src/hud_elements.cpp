@@ -220,6 +220,8 @@ void HudElements::convert_colors(bool do_conv, const struct overlay_params& para
     convert_colors(params);
 }
 
+#include "hud_i18n.hpp"
+
 void HudElements::TextColored(ImVec4 col, const char *fmt, ...){
     auto textColor = ImGui::ColorConvertFloat4ToU32(col);
     char buffer[128] {};
@@ -229,7 +231,9 @@ void HudElements::TextColored(ImVec4 col, const char *fmt, ...){
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
 
-    RenderOutlinedText(buffer, textColor);
+    // 中文化：整串命中翻译表才替换（"GPU"→"显卡"），数值/单位/未收录词原样输出
+    std::string localized = hud_i18n::tr(std::string(buffer));
+    RenderOutlinedText(localized.c_str(), textColor);
 }
 
 int HudElements::convert_to_fahrenheit(int celsius){

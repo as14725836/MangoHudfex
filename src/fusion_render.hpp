@@ -23,6 +23,8 @@
  */
 #pragma once
 
+#include "hud_i18n.hpp"   // 标签中文化（tr()）
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -766,7 +768,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.gpu_mhz > 0 ? &s.gpu_mhz : nullptr, "MHz", row_px, unit_px))
             v.push_back(x);
-        add("GPU", kColGpu, std::move(v));
+        add(hud_i18n::tr("GPU"), kColGpu, std::move(v));
     }
     if (c.cpu) {
         std::vector<Span> v;
@@ -783,7 +785,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.cpu_mhz > 0 ? &s.cpu_mhz : nullptr, "MHz", row_px, unit_px))
             v.push_back(x);
-        add("CPU", kColCpu, std::move(v));
+        add(hud_i18n::tr("CPU"), kColCpu, std::move(v));
     }
     if (c.vram && s.vram_used >= 0.0f) {
         std::vector<Span> v = value_unit(gib(s.vram_used), row_px, unit_px);
@@ -797,7 +799,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
             for (const Span& x : num_unit(&s.mem_clock, "MHz", row_px, unit_px))
                 v.push_back(x);
         }
-        add("VRAM", kColVram, std::move(v));
+        add(hud_i18n::tr("VRAM"), kColVram, std::move(v));
     }
     if (c.ram) {
         std::vector<Span> v;
@@ -807,7 +809,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.ram_pct >= 0 ? &s.ram_pct : nullptr, "%", row_px, unit_px))
             v.push_back(x);
-        add("RAM", kColRam, std::move(v));
+        add(hud_i18n::tr("RAM"), kColRam, std::move(v));
     }
     if (c.bat || c.power) {
         std::vector<Span> v;
@@ -825,7 +827,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
             any = true;
         }
         if (any)
-            add("BAT", kColBat, std::move(v));
+            add(hud_i18n::tr("BAT"), kColBat, std::move(v));
     }
     if (c.fps) {
         std::vector<Span> v;
@@ -836,7 +838,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
             v.push_back(x);
         add(api_label(s, c).c_str(), kColFps, std::move(v));
 
-        add("AVG", kColLo, num_unit_f(s.fps_avg, "FPS", row_px, unit_px));
+        add(hud_i18n::tr("AVG"), kColLo, num_unit_f(s.fps_avg, "FPS", row_px, unit_px));
         add("1%", kColLo, num_unit_f(s.low1, "FPS", row_px, unit_px));
         add("0.1%", kColLo, num_unit_f(s.low01, "FPS", row_px, unit_px));
         if (c.low001)
@@ -844,7 +846,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     }
 
     if (!model_txt.empty()) {
-        float lw = f.M.measure("GPU", row_px);
+        float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
         float vw = 0.0f;
         for (const Row& r : rows) {
             lw = std::max(lw, f.M.measure(r.label.text, row_px));
@@ -852,7 +854,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         }
         const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
         std::vector<Row> mrows;
-        mrows.push_back(Row{Span{"GPU", kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
         for (size_t i = 1; i < ml.size(); ++i)
             mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
         rows.insert(rows.begin(), mrows.begin(), mrows.end());
@@ -881,9 +883,9 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     if (c.fps && c.graph) {
         const float ft_px = unit_px * 1.15f;
         const float baseline = y - asc;
-        f.place(pad, baseline, std::vector<Span>{Span{"Frametime", kColFps, ft_px}});
+        f.place(pad, baseline, std::vector<Span>{Span{hud_i18n::tr("Frametime"), kColFps, ft_px}});
         const std::string stat = "min:" + fmt_f(s.ft_min, 5, 1) + " max:" + fmt_f(s.ft_max, 5, 1);
-        const float stat_x = pad + std::max(label_col, f.M.measure("Frametime", ft_px)) + lv_gap;
+        const float stat_x = pad + std::max(label_col, f.M.measure(hud_i18n::tr("Frametime"), ft_px)) + lv_gap;
         const float end = f.place(stat_x, baseline, std::vector<Span>{Span{stat, kColDim, unit_px}});
         max_right = std::max(max_right, end);
         y += h + line_gap;
@@ -917,7 +919,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
 
     if (c.fps) {
         Tile t;
-        t.key = "FPS";
+        t.key = hud_i18n::tr("FPS");
         t.key_col = kColFps;
         t.value = {Span{fmt_f(s.fps, 5, 1), kColValue, val_px}};
         t.sub = fmt_f(s.fps_avg, 5, 1) + " avg · " +
@@ -935,7 +937,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.gpu) {
         Tile t;
-        t.key = "GPU";
+        t.key = hud_i18n::tr("GPU");
         t.key_col = kColGpu;
         t.value = num_unit(s.gpu_pct >= 0 ? &s.gpu_pct : nullptr, "%", val_px, unit_px);
         if (c.gpu_temp && s.gpu_temp >= 0)
@@ -947,7 +949,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.cpu) {
         Tile t;
-        t.key = "CPU";
+        t.key = hud_i18n::tr("CPU");
         t.key_col = kColCpu;
         t.value = num_unit(s.cpu_pct >= 0 ? &s.cpu_pct : nullptr, "%", val_px, unit_px);
         std::string sub;
@@ -964,7 +966,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.vram && s.vram_used >= 0.0f) {
         Tile t;
-        t.key = "VRAM";
+        t.key = hud_i18n::tr("VRAM");
         t.key_col = kColVram;
         t.value = value_unit(gib(s.vram_used), val_px, unit_px);
         // 副行补上百分比 / 内存频率（读不到就不加，保持简洁）
@@ -983,7 +985,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.ram) {
         Tile t;
-        t.key = "RAM";
+        t.key = hud_i18n::tr("RAM");
         t.key_col = kColRam;
         t.value = num_unit(s.ram_pct >= 0 ? &s.ram_pct : nullptr, "%", val_px, unit_px);
         if (s.ram_used >= 0.0f)
@@ -1002,7 +1004,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     }
     if (c.gpu_model && !s.gpu_model.empty()) {
         Tile t;
-        t.key = "GPU";
+        t.key = hud_i18n::tr("GPU");
         t.key_col = kColGpu;
         t.value = {Span{s.gpu_model, kColValue, val_px}};
         t.wide = true;
@@ -1027,7 +1029,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         }
         if (any) {
             Tile t;
-            t.key = "BAT";
+            t.key = hud_i18n::tr("BAT");
             t.key_col = kColBat;
             t.value = std::move(parts);
             t.wide = true;
@@ -1341,7 +1343,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.gpu_mhz > 0 ? &s.gpu_mhz : nullptr, "MHz", row_px, unit_px))
             v.push_back(x);
-        left.push_back(Row{Span{"GPU", kColGpu, row_px}, std::move(v), false});
+        left.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, std::move(v), false});
     }
     if (c.cpu) {
         std::vector<Span> v;
@@ -1358,7 +1360,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.cpu_mhz > 0 ? &s.cpu_mhz : nullptr, "MHz", row_px, unit_px))
             v.push_back(x);
-        left.push_back(Row{Span{"CPU", kColCpu, row_px}, std::move(v), false});
+        left.push_back(Row{Span{hud_i18n::tr("CPU"), kColCpu, row_px}, std::move(v), false});
     }
     if (c.per_core) {
         const size_t n = std::max(s.core_pct.size(), s.core_mhz.size());
@@ -1388,7 +1390,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
             for (const Span& x : num_unit(&s.mem_clock, "MHz", row_px, unit_px))
                 v.push_back(x);
         }
-        right.push_back(Row{Span{"VRAM", kColVram, row_px}, std::move(v), false});
+        right.push_back(Row{Span{hud_i18n::tr("VRAM"), kColVram, row_px}, std::move(v), false});
     }
     if (c.ram) {
         std::vector<Span> v;
@@ -1403,7 +1405,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         v.push_back(gap(unit_px));
         for (const Span& x : num_unit(s.ram_pct >= 0 ? &s.ram_pct : nullptr, "%", row_px, unit_px))
             v.push_back(x);
-        right.push_back(Row{Span{"RAM", kColRam, row_px}, std::move(v), false});
+        right.push_back(Row{Span{hud_i18n::tr("RAM"), kColRam, row_px}, std::move(v), false});
     }
     if (c.swap && s.swap_used >= 0.0f) {
         std::vector<Span> v;
@@ -1432,7 +1434,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
             any = true;
         }
         if (any)
-            right.push_back(Row{Span{"BAT", kColBat, row_px}, std::move(v), false});
+            right.push_back(Row{Span{hud_i18n::tr("BAT"), kColBat, row_px}, std::move(v), false});
     }
     if (c.fps) {
         std::vector<Span> v;
@@ -1442,7 +1444,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         for (const Span& x : num_unit_f(1000.0f / std::max(s.fps, 1.0f), "ms", row_px, unit_px))
             v.push_back(x);
         right.push_back(Row{Span{api_label(s, c), kColFps, row_px}, std::move(v), false});
-        right.push_back(Row{Span{"AVG", kColLo, row_px}, num_unit_f(s.fps_avg, "FPS", row_px, unit_px), false});
+        right.push_back(Row{Span{hud_i18n::tr("AVG"), kColLo, row_px}, num_unit_f(s.fps_avg, "FPS", row_px, unit_px), false});
         right.push_back(Row{Span{"1%", kColLo, row_px}, num_unit_f(s.low1, "FPS", row_px, unit_px), false});
         right.push_back(Row{Span{"0.1%", kColLo, row_px}, num_unit_f(s.low01, "FPS", row_px, unit_px), false});
         if (c.low001)
@@ -1450,7 +1452,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     }
 
     if (!model_txt.empty()) {
-        float lw = f.M.measure("GPU", row_px);
+        float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
         float vw = 0.0f;
         for (const Row& r : left) {
             lw = std::max(lw, f.M.measure(r.label.text, row_px));
@@ -1458,7 +1460,7 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         }
         const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
         std::vector<Row> mrows;
-        mrows.push_back(Row{Span{"GPU", kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
         for (size_t i = 1; i < ml.size(); ++i)
             mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
         left.insert(left.begin(), mrows.begin(), mrows.end());

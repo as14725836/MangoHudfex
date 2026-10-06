@@ -13,6 +13,8 @@
  * DejaVu Sans Mono Bold → 桌面发行版 DejaVu → Android 系统等宽字体。
  * 全都找不到时返回空串，由调用方回退到内嵌字体。
  */
+#include "hud_i18n.hpp"
+
 static std::string fusion_font_path(const overlay_params& params) {
    if (!params.font_file.empty() && file_exists(params.font_file))
       return params.font_file;   // 用户在配置里指定了字体，尊重其选择
@@ -23,6 +25,12 @@ static std::string fusion_font_path(const overlay_params& params) {
    }
 
    static const char* kCandidates[] = {
+      // 安卓自带中文字体优先：界面标签是中文，需要汉字覆盖
+      "/system/fonts/NotoSansSC-Regular.otf",
+      "/system/fonts/NotoSansCJKsc-Regular.otf",
+      "/system/fonts/NotoSansCJK-Regular.ttc",
+      "/system/fonts/DroidSansFallbackFull.ttf",
+      "/system/fonts/DroidSansFallback.ttf",
       // 随包安装（termux-glibc 扁平布局 / usr 布局 / 通用前缀）
       "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
       "/data/data/com.termux/files/usr/glibc/usr/share/mangohud/fonts/DejaVuSansMono-Bold.ttf",
@@ -85,6 +93,8 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    ImVector<ImWchar> glyph_ranges;
    ImFontGlyphRangesBuilder builder;
    builder.AddRanges(font_atlas->GetGlyphRangesDefault());
+   // 中文化标签用到的汉字：按需烘焙，图集只多几十个字形
+   builder.AddText(hud_i18n::zh_glyph_text());
    if (params.font_glyph_ranges & FG_KOREAN)
       builder.AddRanges(font_atlas->GetGlyphRangesKorean());
    if (params.font_glyph_ranges & FG_CHINESE_FULL)
