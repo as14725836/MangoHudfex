@@ -48,6 +48,12 @@ static std::string fusion_font_path(const overlay_params& params) {
    }
 
    static const char* kCandidates[] = {
+      // 随包的中文子集：界面标签是中文，DejaVu / Roboto 都没有汉字
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/data/data/com.termux/files/usr/glibc/usr/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/data/data/com.termux/files/usr/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/usr/share/mangohud/fonts/MangoHud-CJK.ttf",
+      "/usr/local/share/mangohud/fonts/MangoHud-CJK.ttf",
       // 安卓自带中文字体优先：界面标签是中文，需要汉字覆盖。
       // 注意：只能放 TrueType（.ttf）——Noto 的 .otf/.ttc 是 CFF/集合，
       // stb_truetype 解析会失败并让 HUD 黑屏（已被 is_loadable_ttf 兜住）。
@@ -157,12 +163,22 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    // FusionHUD 原版的 Monospace Bold）；找不到再退回内嵌字体。
    // 刻意**不**跟随 font_glyph_ranges：在 51px 下加 CJK 会让图集体积爆炸，
    // 而 FusionHUD 只会画 ASCII + ° · — ↓。
-   static const ImWchar fusion_ranges[] = {
-      0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
-      0x2013, 0x2014,   // – —
-      0x2190, 0x2193,   // ← ↑ → ↓
-      0,
-   };
+   // FHUD 的 glyph ranges：Latin-1 + 符号 + 中文化标签用到的汉字。
+   // 汉字按需添加（只有几十个字形），所以 51px 下也不会把图集撑爆。
+   ImVector<ImWchar> fusion_ranges_vec;
+   {
+      static const ImWchar fusion_base[] = {
+         0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
+         0x2013, 0x2014,   // – —
+         0x2190, 0x2193,   // ← ↑ → ↓
+         0,
+      };
+      ImFontGlyphRangesBuilder fusion_builder;
+      fusion_builder.AddRanges(fusion_base);
+      fusion_builder.AddText(hud_i18n::zh_glyph_text());
+      fusion_builder.BuildRanges(&fusion_ranges_vec);
+   }
+   const ImWchar* fusion_ranges = fusion_ranges_vec.Data;
 
    ImFontConfig fusion_config;
    fusion_config.OversampleH = 2;
@@ -207,6 +223,27 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
          secondary_font = font_atlas->Fonts[0];
       } else {
          secondary_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size_secondary, nullptr, default_range);
+         font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
+      }
+   } else if (!fusion_ttf.empty()) {
+      // 没设 font_file：用 fusion_font_path() 选到的字体（随包中文子集 / 系统字体）。
+      // 以前这里直接退回内嵌英文字体，中文标签就全变 "?" 了。
+      font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size, nullptr,
+                                     same_font && text_same_size ? glyph_ranges.Data : default_range);
+      font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
+      fusion.small = bake_fusion(size_small);
+      fusion.mid = bake_fusion(size_mid);
+      fusion.big = bake_fusion(size_big);
+      if (params.no_small_font)
+         small_font = font_atlas->Fonts[0];
+      else {
+         small_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size * 0.55f, nullptr, default_range);
+         font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size * 0.55f, &config, icon_ranges);
+      }
+      if (secondary_same_size) {
+         secondary_font = font_atlas->Fonts[0];
+      } else {
+         secondary_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size_secondary, nullptr, default_range);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
       }
    } else {

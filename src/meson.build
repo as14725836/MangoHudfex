@@ -351,6 +351,7 @@ configure_file(input : '../bin/mangohud.in',
 # 而打包流程用 -Dinclude_doc=false，整个 data/ 子目录不会被处理，字体就装不进包。
 install_data(
   files('../data/fonts/DejaVuSansMono-Bold.ttf'),
+  files('../data/fonts/MangoHud-CJK.ttf'),  # CJK subset for the Chinese HUD labels
   install_dir : join_paths(get_option('datadir'), 'mangohud', 'fonts'),
   install_tag : 'runtime',
 )
