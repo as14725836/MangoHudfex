@@ -742,10 +742,29 @@ void horizontal_separator(struct overlay_params& params) {
 
 void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& window_size, bool is_vulkan)
 {
-   {
+   // 原来这里是每帧阻塞等待配置就绪：配置线程一旦被拖住，
+   // 游戏这一帧就跟着堵死（表现就是加载画面卡住）。
+   // 改成非阻塞：本帧没就绪就先不画，下一帧再试——绝不让 present 等锁。
+   if (!config_ready) {
       std::unique_lock<std::mutex> lock(config_mtx);
-      config_cv.wait(lock, []{ return config_ready; });
+      if (!config_ready)
+         return;
    }
+   // 帧耗时看门狗（MANGOHUD_STALL_LOG=1 时启用）：只报超过 30ms 的帧，
+   // 以后遇到卡顿可以拿日志定位是哪一帧被什么拖住。
+   struct FrameTimer {
+      std::chrono::steady_clock::time_point t0{std::chrono::steady_clock::now()};
+      ~FrameTimer() {
+         static const bool on = std::getenv("MANGOHUD_STALL_LOG") != nullptr;
+         if (!on)
+            return;
+         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0).count();
+         if (ms > 30)
+            SPDLOG_WARN("overlay frame took {} ms", ms);
+      }
+   } frame_timer_;
+   (void)frame_timer_;
    // data.engine = EngineTypes::GAMESCOPE;
    HUDElements.sw_stats = &data;
    auto real_params = get_params();
