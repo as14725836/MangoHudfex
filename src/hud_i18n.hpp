@@ -25,6 +25,19 @@ inline const char* zh_glyph_text() {
         "占用无连接网络显存时钟上限当前扇转速续航";
 }
 
+/** 翻译表里出现过的所有汉字（自动汇总，避免加词忘了补字形 → 显示成 "?"） */
+inline std::string zh_table_glyphs() {
+    std::string out;
+    for (const auto& kv : table())
+        out += kv.second;
+    return out;
+}
+
+/** 需要烘焙到字体图集里的全部字符 = 手写清单 + 翻译表 */
+inline std::string zh_all_glyphs() {
+    return std::string(zh_glyph_text()) + zh_table_glyphs();
+}
+
 inline bool chinese_enabled() {
     static const bool enabled = [] {
         const char* v = std::getenv("MANGOHUD_LANG");

@@ -101,7 +101,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    if (font_size_secondary > font_size || font_size_secondary < FLT_EPSILON)
       font_size_secondary = font_size;
 
-   static const ImWchar default_range[] =
+   [[maybe_unused]] static const ImWchar default_range[] =
    {
       0x0020, 0x00FF, // Basic Latin + Latin Supplement
       0x2018, 0x201F, // Bunch of quotation marks
@@ -124,7 +124,10 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    ImFontGlyphRangesBuilder builder;
    builder.AddRanges(font_atlas->GetGlyphRangesDefault());
    // 中文化标签用到的汉字：按需烘焙，图集只多几十个字形
-   builder.AddText(hud_i18n::zh_glyph_text());
+   {   // 中文化：手写清单 + 翻译表里的所有汉字（自动汇总，防漏字）
+      const std::string zh = hud_i18n::zh_all_glyphs();
+      builder.AddText(zh.c_str());
+   }
    if (params.font_glyph_ranges & FG_KOREAN)
       builder.AddRanges(font_atlas->GetGlyphRangesKorean());
    if (params.font_glyph_ranges & FG_CHINESE_FULL)
@@ -175,7 +178,8 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       };
       ImFontGlyphRangesBuilder fusion_builder;
       fusion_builder.AddRanges(fusion_base);
-      fusion_builder.AddText(hud_i18n::zh_glyph_text());
+      const std::string zh_f = hud_i18n::zh_all_glyphs();
+      fusion_builder.AddText(zh_f.c_str());
       fusion_builder.BuildRanges(&fusion_ranges_vec);
    }
    const ImWchar* fusion_ranges = fusion_ranges_vec.Data;
@@ -199,6 +203,8 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    const float size_small = bake_size(fusionhud::kSmallTextSp);
 
    const std::string fusion_ttf = fusion_font_path(params);
+   if (!fusion_ttf.empty())
+      fprintf(stderr, "[MangoHud] HUD font: %s\n", fusion_ttf.c_str());
    auto bake_fusion = [&](float px) -> ImFont* {
       if (!fusion_ttf.empty())
          return font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), px, &fusion_config, fusion_ranges);
@@ -208,7 +214,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
 
    // ImGui takes ownership of the data, no need to free it
    if (is_loadable_ttf(params.font_file)) {
-      font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size, nullptr, same_font && text_same_size ? glyph_ranges.Data : default_range);
+      font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size, nullptr, glyph_ranges.Data);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
       fusion.small = bake_fusion(size_small);
       fusion.mid = bake_fusion(size_mid);
@@ -216,20 +222,20 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {
-         small_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size * 0.55f, nullptr, default_range);
+         small_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size * 0.55f, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size * 0.55f, &config, icon_ranges);
       }
       if (secondary_same_size) {
          secondary_font = font_atlas->Fonts[0];
       } else {
-         secondary_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size_secondary, nullptr, default_range);
+         secondary_font = font_atlas->AddFontFromFileTTF(params.font_file.c_str(), font_size_secondary, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
       }
    } else if (!fusion_ttf.empty()) {
       // 没设 font_file：用 fusion_font_path() 选到的字体（随包中文子集 / 系统字体）。
       // 以前这里直接退回内嵌英文字体，中文标签就全变 "?" 了。
       font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size, nullptr,
-                                     same_font && text_same_size ? glyph_ranges.Data : default_range);
+                                     glyph_ranges.Data);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
       fusion.small = bake_fusion(size_small);
       fusion.mid = bake_fusion(size_mid);
@@ -237,18 +243,18 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {
-         small_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size * 0.55f, nullptr, default_range);
+         small_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size * 0.55f, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size * 0.55f, &config, icon_ranges);
       }
       if (secondary_same_size) {
          secondary_font = font_atlas->Fonts[0];
       } else {
-         secondary_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size_secondary, nullptr, default_range);
+         secondary_font = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), font_size_secondary, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
       }
    } else {
       const char* ttf_compressed_base85 = GetDefaultCompressedFontDataTTFBase85();
-      font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size, nullptr, default_range);
+      font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size, nullptr, glyph_ranges.Data);
       font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size, &config, icon_ranges);
       fusion.small = bake_fusion(size_small);
       fusion.mid = bake_fusion(size_mid);
@@ -256,13 +262,13 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       if (params.no_small_font)
          small_font = font_atlas->Fonts[0];
       else {
-         small_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size * 0.55f, nullptr, default_range);
+         small_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size * 0.55f, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size * 0.55f, &config, icon_ranges);
       }
       if (secondary_same_size) {
          secondary_font = font_atlas->Fonts[0];
       } else {
-         secondary_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size_secondary, nullptr, default_range);
+         secondary_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size_secondary, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
       }
    }
