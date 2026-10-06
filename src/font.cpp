@@ -379,10 +379,14 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
          fprintf(stderr, "[MangoHud] HUD font: %s\n", fusion_ttf.c_str());
    }
    auto bake_fusion = [&](float px) -> ImFont* {
+      // 每档单独一份配置：字距按 em 比例给（排版更透气），横向过采样提到 3（更锐利）
+      ImFontConfig cfg = fusion_config;
+      cfg.OversampleH = 3;
+      cfg.GlyphExtraSpacing.x = px * fusionhud::kTrackingEm;
       if (!fusion_ttf.empty())
-         return font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), px, &fusion_config, fusion_ranges);
+         return font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), px, &cfg, fusion_ranges);
       return font_atlas->AddFontFromMemoryCompressedBase85TTF(
-         GetDefaultCompressedFontDataTTFBase85(), px, &fusion_config, fusion_ranges);
+         GetDefaultCompressedFontDataTTFBase85(), px, &cfg, fusion_ranges);
    };
 
    // ImGui takes ownership of the data, no need to free it

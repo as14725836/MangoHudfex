@@ -41,10 +41,21 @@ constexpr uint32_t kColBat    = 0xFFFFAB5E;  // colBat   橙
 constexpr uint32_t kColFps    = 0xFFFF6B6B;  // colFps   红
 constexpr uint32_t kColGraph  = 0xFF5EE08A;  // colGraph 绿（与 GPU 同色）
 constexpr uint32_t kColValue  = 0xFFFFFFFF;  // colValue 数值白
-constexpr uint32_t kColDim    = 0xFFC6D0DC;  // colDim   标签灰
+constexpr uint32_t kColDim    = 0xFFB8C4D4;  // colDim   标签灰（略收，避免抢数值的视线）
+constexpr uint32_t kColUnit   = 0xFF8A96A8;  // 单位后缀（比标签再淡一档，形成层级）
 constexpr uint32_t kColLo     = 0xFFF7FAFF;  // colLo    AVG / 1% / 0.1% / 0.01%
 /** 面板描边色：AppThemeState.getCurrentAccentArgb() 的默认值 */
 constexpr uint32_t kColAccent = 0xFFA374FF;
+/** 面板底色（深蓝黑）：与紫色强调色同色系，比纯黑更有"材质"感 */
+constexpr uint32_t kColPanelRgb  = 0x000B0F16u;
+constexpr const char* kPanelHex  = "0B0F16";
+/** 面板内高光描边（1px，白 9%）：玻璃质感 */
+constexpr uint32_t kColPanelEdge = 0x18FFFFFFu;
+/** 面板外投影（两层：近处深、远处淡） */
+constexpr uint32_t kColShadowNear = 0x1C000000u;
+constexpr uint32_t kColShadowFar  = 0x10000000u;
+/** 字距（em 比例，烘焙期写入 ImFontConfig::GlyphExtraSpacing） */
+constexpr float kTrackingEm = 0.015f;
 
 // ============================================================================
 // 几何常量 —— 对照 onDraw() / sp() 换算
@@ -207,7 +218,7 @@ fusionThemeOptions(FusionSize size, float bg_opacity = kBgOpacityDefault,
     o.emplace_back("fps_color",      white);
 
     // ---- 面板：纯黑底（上游 Color.argb(bgOpacity*255, 0,0,0)）+ 圆角 8，无文字描边 ----
-    o.emplace_back("background_color", "000000");
+    o.emplace_back("background_color", kPanelHex);
     o.emplace_back("background_alpha", std::to_string(bg_opacity));
     o.emplace_back("alpha", "1.0");
     o.emplace_back("round_corners", std::to_string((int)std::lround(kBgRadiusSp)));

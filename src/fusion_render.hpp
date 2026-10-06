@@ -204,7 +204,7 @@ struct Tile {
 
 /** 间距紧凑系数：只作用于 pad/gap，不改变字号。
  *  FusionHUD 的 sp 会乘手机密度，直接照搬到 HUD 上显得过于空；0.75 收紧后更贴身。 */
-inline constexpr float kGapScale = 0.75f;
+inline constexpr float kGapScale = 0.78f;
 
 struct Metrics {
     ImFont* font = nullptr;        // 大号
@@ -324,21 +324,21 @@ inline std::vector<std::string> wrap_name_to(const Metrics& m, const std::string
     return wrap_text(m, t, px, std::max(floor_w, avail_px));
 }
 
-inline Span gap(float unit_px) { return Span{"  ", kColDim, unit_px}; }
+inline Span gap(float unit_px) { return Span{"  ", kColUnit, unit_px}; }
 
 inline std::vector<Span> num_unit(const int* v, const char* unit, float px, float unit_px) {
     // MHz 是 4 位（2016），百分比是 3 位（87）—— 按用途给足固定占位宽度
     const int width = (unit && std::strcmp(unit, "MHz") == 0) ? 4 : 3;
     if (!v || *v < 0)
-        return {Span{pad_dash(width), kColDim, px}, Span{unit, kColDim, unit_px}};
-    return {Span{fmt_i(*v, width), kColValue, px}, Span{unit, kColDim, unit_px}};
+        return {Span{pad_dash(width), kColDim, px}, Span{unit, kColUnit, unit_px}};
+    return {Span{fmt_i(*v, width), kColValue, px}, Span{unit, kColUnit, unit_px}};
 }
 
 /** 浮点版本：<= 0 视为无数据（FusionHUD 的 lowText 语义） */
 inline std::vector<Span> num_unit_f(float v, const char* unit, float px, float unit_px) {
     if (!(v > 0.0f))
-        return {Span{pad_dash(5), kColDim, px}, Span{unit, kColDim, unit_px}};
-    return {Span{fmt_f(v, 5, 1), kColValue, px}, Span{unit, kColDim, unit_px}};
+        return {Span{pad_dash(5), kColDim, px}, Span{unit, kColUnit, unit_px}};
+    return {Span{fmt_f(v, 5, 1), kColValue, px}, Span{unit, kColUnit, unit_px}};
 }
 
 /** "3.2GiB" → 白色数字 + 灰色后缀 */
@@ -353,13 +353,13 @@ inline std::vector<Span> value_unit(const std::string& t, float px, float unit_p
         ++i;
     if (i == lead || i >= t.size())
         return {Span{t, kColValue, px}};
-    return {Span{t.substr(0, i), kColValue, px}, Span{t.substr(i), kColDim, unit_px}};
+    return {Span{t.substr(0, i), kColValue, px}, Span{t.substr(i), kColUnit, unit_px}};
 }
 
 inline std::vector<Span> temp_spans(int c, float px, float unit_px) {
     if (c < 0)
         return {};
-    return {Span{fmt_i(c, 3), kColValue, px}, Span{"°C", kColDim, unit_px}};
+    return {Span{fmt_i(c, 3), kColValue, px}, Span{"°C", kColUnit, unit_px}};
 }
 
 inline std::string gib(float v) { return fmt_f(v, 4, 1) + "GiB"; }
@@ -1662,7 +1662,8 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     // 背景：纯黑 × bgOpacity（上游 onDraw 的 Color.argb(bgOpacity*255, 0, 0, 0)）
     float bg_a = p.background_alpha;
     bg_a = std::min(std::max(bg_a, 0.0f), 1.0f);
-    const uint32_t bg = (static_cast<uint32_t>(std::lround(bg_a * 255.0f)) << 24) | 0x000000u;
+    const uint32_t bg = (static_cast<uint32_t>(std::lround(bg_a * 255.0f)) << 24) |
+                        kColPanelRgb;
 
     // 圆角：Pill 用 height/2 的真圆（胶囊）；其余用按短边比例放大的 squircle
     float radius;
@@ -1676,9 +1677,28 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
         sq_n = kSquircleN;
     }
 
+    // 外投影：两层逐渐变淡的同形轮廓，让面板从画面上"浮"起来（Pill 也适用）
+    for (int i = 2; i >= 1; --i) {
+        const float e = f.M.sp(1.4f) * static_cast<float>(i);
+        std::vector<ImVec2> shp;
+        squircle_path(shp, x0 - e, y0 - e * 0.5f, x1 + e, y1 + e, radius + e, sq_n, kSquircleSeg);
+        dl->AddConvexPolyFilled(shp.data(), static_cast<int>(shp.size()),
+                                to_imcol(i == 1 ? kColShadowNear : kColShadowFar));
+    }
+
     std::vector<ImVec2> path;
     squircle_path(path, x0, y0, x1, y1, radius, sq_n, kSquircleSeg);
     dl->AddConvexPolyFilled(path.data(), static_cast<int>(path.size()), to_imcol(bg));
+
+    // 内高光：贴着面板内沿 1px 的亮边（玻璃质感），与强调色描边相互独立
+    {
+        const float hi = 1.0f;
+        std::vector<ImVec2> hp;
+        squircle_path(hp, x0 + hi, y0 + hi, x1 - hi, y1 - hi,
+                      std::max(0.0f, radius - hi), sq_n, kSquircleSeg);
+        dl->AddPolyline(hp.data(), static_cast<int>(hp.size()), to_imcol(kColPanelEdge),
+                        true, 1.0f);
+    }
 
     // 描边：与填充同形，仅向内偏移半个线宽 —— 外沿与面板边缘重合、宽度处处一致，
     // 也就不会在角上留出黑缝。
@@ -1748,6 +1768,10 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
             const float gr_r = f.M.sp(3.0f);
             dl->AddRectFilled(g0, g1, to_imcol(0x14000000u | (kColGraph & 0x00FFFFFFu)), gr_r);
             dl->AddRect(g0, g1, to_imcol(0x1EFFFFFFu), gr_r, 0, 1.0f);
+            // 中位参考线：曲线到一半高度时有参照，读图更快
+            const float gmid = (g0.y + g1.y) * 0.5f;
+            dl->AddLine(ImVec2(g0.x + 1.0f, gmid), ImVec2(g1.x - 1.0f, gmid),
+                        to_imcol(0x14FFFFFFu), 1.0f);
             // 外发光 + 实线：先粗描一层低透明度，再叠细实线
             dl->AddPolyline(pts.data(), static_cast<int>(pts.size()),
                             to_imcol(0x46000000u | (kColGraph & 0x00FFFFFFu)), false, f.M.sp(3.4f));
