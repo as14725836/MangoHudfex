@@ -585,6 +585,9 @@ struct Frame {
     float content_w = 0.0f;
     float content_h = 0.0f;
     std::string credit;   // 画面署名（自绘模式下由本渲染器负责显示）
+    /** 最后一段文字的基线 + 最后一次 place() 的右端：给底部时钟对齐用 */
+    float last_baseline = -1.0f;
+    float last_call_right = 0.0f;
 
     /** 放一段 run，返回结束 x */
     float place(float x, float baseline, const std::vector<Span>& spans) {
@@ -600,6 +603,8 @@ struct Frame {
             glyphs.push_back(g);
             x += M.measure(s.text, s.px);
         }
+        last_baseline = std::max(last_baseline, baseline);
+        last_call_right = x;
         return x;
     }
 };
@@ -622,7 +627,17 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
     const float w = f.M.measure(txt, px);
 
     const float footer_top = f.content_h - pad;
-    const float baseline = footer_top - f.M.ascent(px);
+    // 默认：自己的底部一行；若放得下则改成“与最后一行参数同一行”（右端）
+    float baseline = footer_top - f.M.ascent(px);
+    bool same_line = false;
+    if (f.last_baseline > 0.0f) {
+        const float need = f.last_call_right + f.M.sp(10.0f) + w + f.M.sp(kRightInsetSp);
+        if (need <= f.content_w + 0.5f) {
+            baseline = f.last_baseline;
+            same_line = true;
+        }
+    }
+    (void)same_line;
     float x;
     if (center_x >= 0.0f) {
         x = center_x - w * 0.5f;
@@ -642,7 +657,7 @@ inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x =
 
     // 底部只留一点边：原来是 2×ascent + pad/2（≈时钟字高的 1.4 倍），
     // 会看成“时钟下面空一大块”。改成贴着字形底 + 6sp。
-    f.content_h = g.top + f.M.line_h(px) + f.M.sp(6.0f);
+    f.content_h = std::max(f.content_h, g.top + f.M.line_h(px) + f.M.sp(6.0f));
     f.content_w = std::max(f.content_w, pad + w + f.M.sp(kRightInsetSp));
 }
 
