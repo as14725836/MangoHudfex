@@ -17,6 +17,7 @@
 #include <cstdio>   // is_loadable_ttf 用 FILE/fread
 #include <cstring>   // strchr/strstr
 #include <cctype>    // tolower
+#include <vector>
 #include <dirent.h>  // opendir/readdir
 
 // stb_truetype 只支持 TrueType 轮廓：文件头 0x00010000（或 'true'）。
@@ -39,6 +40,41 @@ static bool is_loadable_ttf(const std::string& path) {
    const unsigned int tag = ((unsigned int)h[0] << 24) | ((unsigned int)h[1] << 16) |
                             ((unsigned int)h[2] << 8) | (unsigned int)h[3];
    return tag == 0x00010000u || tag == 0x74727565u;
+}
+
+// 从 fontconfig 配置里取出 <dir>...</dir> 指定的字体目录。
+// Termux glibc 的配置在 /data/data/com.termux/files/usr/glibc/etc/fonts/fonts.conf。
+static void fontconfig_dirs(const std::string& conf, std::vector<std::string>& out) {
+   FILE* f = fopen(conf.c_str(), "r");
+   if (!f)
+      return;
+
+   std::string text;
+   {
+      char buf[4096];
+      size_t n = 0;
+      while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+         text.append(buf, n);
+   }
+   fclose(f);
+
+   size_t pos = 0;
+   while ((pos = text.find("<dir>", pos)) != std::string::npos) {
+      pos += 5;
+      const size_t end = text.find("</dir>", pos);
+      if (end == std::string::npos)
+         break;
+
+      std::string d = text.substr(pos, end - pos);
+      while (!d.empty() && (d.front() == ' ' || d.front() == '\t' || d.front() == '\n'))
+         d.erase(d.begin());
+      while (!d.empty() && (d.back() == ' ' || d.back() == '\t' || d.back() == '\n' || d.back() == '\r'))
+         d.pop_back();
+
+      if (!d.empty() && d[0] == '/')
+         out.push_back(d);
+      pos = end + 6;
+   }
 }
 
 // 扫描目录里第一个可用的 TrueType 字体。
@@ -117,7 +153,20 @@ static std::string fusion_font_path(const overlay_params& params) {
          return env;
    }
 
-   // 1) 先扫常用字体目录（Termux glibc 的 share/fonts 放最前）
+   // 0) 先按 fontconfig 的 fonts.conf 走（它写明了系统字体到底在哪）
+   static const char* kFontConf[] = {
+      "/data/data/com.termux/files/usr/glibc/etc/fonts/fonts.conf",
+      "/data/data/com.termux/files/usr/etc/fonts/fonts.conf",
+      "/etc/fonts/fonts.conf",
+   };
+   std::vector<std::string> fc_dirs;
+   for (const char* conf : kFontConf)
+      fontconfig_dirs(conf, fc_dirs);
+   for (const std::string& dir : fc_dirs)
+      if (std::string p = first_usable_font(dir); !p.empty())
+         return p;
+
+   // 1) 再扫常用字体目录（Termux glibc 的 share/fonts 放最前）
    static const char* kFontDirs[] = {
       "/data/data/com.termux/files/usr/glibc/share/fonts",
       "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts",
