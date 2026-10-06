@@ -62,9 +62,9 @@ constexpr float kEdgeInset = 12.0f;
 constexpr float kOutlineDefault  = 0.0f;   // 面板描边强度：默认 0 = 不画紫边；>0 时 × sp(3.5) 为线宽
 constexpr float kOutlineStrong   = 0.7f;   // "strong" → 70
 constexpr float kBgOpacityDefault = 0.8f;  // bgOpacity 默认 0.8
-constexpr float kGraphHeightSp   = 22.0f;  // Full/Mega: gh = sp(22f)
-constexpr float kFullGraphMinSp  = 160.0f; // Full: 图最小宽 sp(160f)
-constexpr float kMinimalGraphSp  = 120.0f; // Minimal: gw = sp(120f)
+constexpr float kGraphHeightSp   = 26.0f;  // Full/Mega: gh = sp(26f)
+constexpr float kFullGraphMinSp  = 200.0f; // Full: 图最小宽 sp(200f)
+constexpr float kMinimalGraphSp  = 150.0f; // Minimal: gw = sp(150f)
 
 // ============================================================================
 // 五种尺寸 —— FusionHudModels.kt 的 FusionSize
@@ -112,34 +112,34 @@ struct FusionMetrics {
 
 inline FusionMetrics fusionMetrics(FusionSize s) {
     switch (s) {
-        // Full:  rowPx=12 unit=0.62 pad=10 lineGap=4 lvGap=8
-        case FusionSize::FULL:    return {12.0f, 0.62f, 10.0f, 4.0f, 8.0f, 10.0f, 18.0f, 10.0f,  0.0f,  0.0f};
-        // Tiles: key=10 val=18 sub=10 unit=11 pad=9 innerPad=8 tileGap=6 lineGap=4
-        case FusionSize::TILES:   return {18.0f, 0.61f,  9.0f, 4.0f, 8.0f, 10.0f, 18.0f, 10.0f,  0.0f,  0.0f};
-        // Pill:  big=30 bigUnit=big*0.36 stk=11.5 pad=10 midGap=12 stkLineGap=3
-        case FusionSize::PILL:    return {11.5f, 0.36f, 10.0f, 3.0f, 12.0f, 10.0f, 18.0f, 10.0f, 30.0f,  0.0f};
-        // Minimal: big=34 bigUnit=big*0.32 sub=11.5 pad=10 lineGap=6
-        case FusionSize::MINIMAL: return {11.5f, 0.32f, 10.0f, 6.0f,  8.0f, 10.0f, 18.0f, 10.0f, 34.0f,  0.0f};
-        // Mega:  rowPx=11.5 unit=0.62 band=9.5 pad=10 lineGap=3.5 lvGap=7 gutter=16
-        case FusionSize::MEGA:    return {11.5f, 0.62f, 10.0f, 3.5f, 7.0f, 10.0f, 18.0f, 10.0f,  0.0f,  9.5f};
+        // Full:  rowPx=14 unit=0.62 pad=12 lineGap=5 lvGap=9
+        case FusionSize::FULL:    return {14.0f, 0.62f, 12.0f, 5.0f, 9.0f, 12.0f, 20.0f, 12.0f,  0.0f,  0.0f};
+        // Tiles: key=12 val=20 sub=12 unit=13 pad=11 innerPad=9 tileGap=7 lineGap=5
+        case FusionSize::TILES:   return {14.0f, 0.61f, 11.0f, 5.0f, 9.0f, 12.0f, 20.0f, 12.0f,  0.0f,  0.0f};
+        // Pill:  big=34 bigUnit=big*0.36 stk=13 pad=12 midGap=12 stkLineGap=4
+        case FusionSize::PILL:    return {13.0f, 0.36f, 12.0f, 4.0f, 12.0f, 12.0f, 20.0f, 12.0f, 34.0f,  0.0f};
+        // Minimal: big=38 bigUnit=big*0.32 sub=13 pad=12 lineGap=6
+        case FusionSize::MINIMAL: return {13.0f, 0.32f, 12.0f, 6.0f,  9.0f, 12.0f, 20.0f, 12.0f, 38.0f,  0.0f};
+        // Mega:  rowPx=13 unit=0.62 band=11 pad=12 lineGap=4.5 lvGap=8 gutter=16
+        case FusionSize::MEGA:    return {13.0f, 0.62f, 12.0f, 4.5f, 8.0f, 12.0f, 20.0f, 12.0f,  0.0f, 11.0f};
     }
-    return {12.0f, 0.62f, 10.0f, 4.0f, 8.0f, 10.0f, 18.0f, 10.0f, 0.0f, 0.0f};
+    return {14.0f, 0.62f, 12.0f, 5.0f, 9.0f, 12.0f, 20.0f, 12.0f, 0.0f, 0.0f};
 }
 
 /** FusionHUD 用到的字号（sp 单位）。font.cpp 按这三档分别烘焙专用字体，
  *  绘制时挑“不小于目标字号”的那一档 —— 只缩不放，最清晰。
  *  大：Minimal 的大号 FPS = sp(34)≈51px；中：Tiles 的数值 = sp(18)≈27px；
  *  小：常规行 / 单位 / 时钟 = sp(12)≈18px。 */
-constexpr float kMaxTextSp = 34.0f;
+constexpr float kMaxTextSp = 22.0f;
 constexpr float kMidTextSp = 18.0f;
-constexpr float kSmallTextSp = 12.0f;
+constexpr float kSmallTextSp = 13.0f;
 
 /**
  * sp → MangoHud font_size 的换算系数。
  * 上游 sp 会乘 Android density（主流手机 ≈2.6~3.5）；MangoHud 的 font_size 直接是
- * 像素高度。取 1.5 作为折中，并把结果夹在 [16,24] 内，避免在 HUD 上出现极端字号。
+ * 像素高度。取 2.1 作为折中，并把结果夹在 [20,34] 内，避免在 HUD 上出现极端字号。
  */
-constexpr float kSpToPx = 1.8f;   // sp -> px 基准（1.8 比上游 1.5 大 20%，字号更醒目）
+constexpr float kSpToPx = 2.1f;   // sp -> px 基准（2.1 让字号明显更醒目）
 
 inline float fusionFontSize(FusionSize s) {
     const FusionMetrics m = fusionMetrics(s);
@@ -147,8 +147,8 @@ inline float fusionFontSize(FusionSize s) {
     if (s == FusionSize::PILL || s == FusionSize::MINIMAL) primary = m.big_px;
     if (s == FusionSize::TILES) primary = m.val_px;
     float px = primary * kSpToPx;
-    if (px < 16.0f) px = 16.0f;
-    if (px > 24.0f) px = 24.0f;
+    if (px < 20.0f) px = 20.0f;   // 下限抬高：小档也不再是“蚂蚁字”
+    if (px > 34.0f) px = 34.0f;   // 上限抬高：Pill/Minimal 的大数字终于能放大
     return std::round(px);
 }
 
