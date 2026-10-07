@@ -12,6 +12,8 @@
 #include "overlay.h"
 #include <chrono>
 #include <cstdlib>
+#include <cctype>
+#include <cstdio>
 #include "cpu.h"
 #include "gpu.h"
 #include "hud_elements.h"
@@ -1039,6 +1041,63 @@ void init_system_info(){
          driver = "MangoHud glxinfo recursion detected";
       }
 
+// ---- Termux / glibc 移植：wine 探测的降噪辅助 ----
+// 下面为了拿 `wine --version`，会把候选路径拼成命令交给 exec()，而 exec() 是
+// popen -> /bin/sh（Termux 下是 bionic sh）。bionic sh 直接 exec glibc / x86_64 的
+// wine 必然失败，内核报错被 sh 打成
+//   sh: line 1: /.../wine: cannot execute binary file: 可执行文件格式错误
+// 刷进游戏日志（只在开启 MangoHud 时出现，DXVK 不走这段）。所以先筛再跑。
+
+/** 从路径名读版本：.../wine-10.0-3proton-vanilla-wow64/bin/wine -> "wine-10.0" */
+static std::string wine_version_from_path(const std::string& p)
+{
+   size_t at = p.find("wine-");
+   while (at != std::string::npos) {
+      size_t i = at + 5, j = i;
+      bool digit = false;
+      while (j < p.size() && (isdigit(static_cast<unsigned char>(p[j])) || p[j] == '.')) {
+         if (isdigit(static_cast<unsigned char>(p[j])))
+            digit = true;
+         ++j;
+      }
+      if (digit)
+         return "wine-" + p.substr(i, j - i);
+      at = p.find("wine-", at + 5);
+   }
+   return {};
+}
+
+#ifndef _WIN32
+/** 当前 shell 能不能直接 exec 这个候选？ */
+static bool host_can_exec(const std::string& cand)
+{
+   if (cand.find('/') == std::string::npos)
+      return false;                    // PATH 名（wine64/wine）在 Termux 里基本不存在
+   if (access(cand.c_str(), X_OK) != 0)
+      return false;                    // 不存在或不可执行：别让 sh 去报“没有那个文件”
+   FILE* f = fopen(cand.c_str(), "rb");
+   if (!f)
+      return false;
+   unsigned char h[20] = {0};
+   const size_t n = fread(h, 1, sizeof(h), f);
+   fclose(f);
+   if (n >= 20 && h[0] == 0x7F && h[1] == 'E' && h[2] == 'L' && h[3] == 'F') {
+      const unsigned short m = static_cast<unsigned short>(h[18] | (h[19] << 8));
+#if defined(__aarch64__)
+      if (m == 62)
+         return false;                 // x86_64 二进制：得靠 box64 / FEX-Emu，直接 exec 必失败
+#elif defined(__x86_64__)
+      if (m == 183)
+         return false;
+#endif
+   }
+   return true;
+}
+#else
+static bool host_can_exec(const std::string&) { return true; }
+#endif
+
+
 // Get WINE version
 
       wineProcess = get_exe_path();
@@ -1058,20 +1117,25 @@ void init_system_info(){
             parse_proton_version(wineProcess, "/../../../../version");
          }
          else {
-            char *dir = dirname((char*)wineProcess.c_str());
-            stringstream findVersion;
-            if (preloader == "wine-preloader")
-               findVersion << "\"" << dir << "/wine\" --version";
-            else
-               findVersion << "\"" << dir << "/wine64\" --version";
-            const char *wine_env = getenv("WINELOADERNOEXEC");
-            if (wine_env)
-               unsetenv("WINELOADERNOEXEC");
-            wineVersion = exec(findVersion.str());
-            trim(wineVersion);
+            const std::string wdir = (wineProcess.find_last_of('/') == std::string::npos)
+                                       ? std::string(".")
+                                       : wineProcess.substr(0, wineProcess.find_last_of('/'));
+            const std::string cand = wdir + (preloader == "wine-preloader" ? "/wine" : "/wine64");
+            // 路径名带版本就先取它：零子进程，也不会踩到跨域 exec 的报错
+            wineVersion = wine_version_from_path(wineProcess);
+            if (wineVersion.empty() && host_can_exec(cand))
+            {
+               stringstream findVersion;
+               findVersion << "\"" << cand << "\" --version 2>/dev/null";
+               const char *wine_env = getenv("WINELOADERNOEXEC");
+               if (wine_env)
+                  unsetenv("WINELOADERNOEXEC");
+               wineVersion = exec(findVersion.str());
+               trim(wineVersion);
+               if (wine_env)
+                  setenv("WINELOADERNOEXEC", wine_env, 1);
+            }
             SPDLOG_DEBUG("WINE version: {}", wineVersion);
-            if (wine_env)
-               setenv("WINELOADERNOEXEC", wine_env, 1);
          }
       }
       else {
@@ -1126,22 +1190,41 @@ void init_system_info(){
            cands.push_back("wine64");
            cands.push_back("wine");
 
-           const char *wine_env = getenv("WINELOADERNOEXEC");
-           if (wine_env)
-              unsetenv("WINELOADERNOEXEC");
-           for (const std::string& cand : cands) {
-              std::stringstream findVersion;
-              findVersion << "\"" << cand << "\" --version";
-              std::string v = exec(findVersion.str());
-              trim(v);
-              if (!v.empty() && v.find("not found") == std::string::npos) {
-                 wineVersion = v;
-                 break;
-              }
-           }
-           if (wine_env)
-              setenv("WINELOADERNOEXEC", wine_env, 1);
-           SPDLOG_DEBUG("WINE version (fallback): {}", wineVersion);
+            const char *wine_env = getenv("WINELOADERNOEXEC");
+            bool ran_any = false;
+            for (const std::string& cand : cands)
+            {
+               // 1) 路径名里带版本 -> 直接解析，不 fork 任何进程
+               const std::string pv = wine_version_from_path(cand);
+               if (!pv.empty())
+               {
+                  wineVersion = pv;
+                  break;
+               }
+               // 2) 本机注定跑不起来的候选跳过：否则 bionic sh 会刷
+               //    “cannot execute binary file: 可执行文件格式错误” / “command not found”
+               if (!host_can_exec(cand))
+                  continue;
+               // 3) 真探测：stdout 取版本，stderr 丢弃
+               std::stringstream findVersion;
+               findVersion << "\"" << cand << "\" --version 2>/dev/null";
+               if (!ran_any)
+               {
+                  ran_any = true;
+                  if (wine_env)
+                     unsetenv("WINELOADERNOEXEC");
+               }
+               std::string v = exec(findVersion.str());
+               trim(v);
+               if (!v.empty() && v.find("not found") == std::string::npos)
+               {
+                  wineVersion = v;
+                  break;
+               }
+            }
+            if (ran_any && wine_env)
+               setenv("WINELOADERNOEXEC", wine_env, 1);
+            SPDLOG_DEBUG("WINE version (fallback): {}", wineVersion);
       }
 
       check_for_vkbasalt_and_gamemode();
