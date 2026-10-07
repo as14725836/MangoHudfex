@@ -238,6 +238,16 @@ inline uint32_t hslToRgb(float h, float s, float l)
 
 } // namespace detail
 
+/** 随机配色是否启用（默认启用；MANGOHUD_FUSION_RANDOM_COLORS=0 关闭） */
+inline bool randomColorsEnabled()
+{
+    if (const char* e = std::getenv("MANGOHUD_FUSION_RANDOM_COLORS")) {
+        if (*e && std::string(e) == "0")
+            return false;
+    }
+    return true;
+}
+
 /**
  * 生成并应用一套随机配色。进程内只做一次（除非 force）。
  * 首次调用点：fusionThemeOptions() —— 也就是任何档位初始化的最前面，
@@ -251,10 +261,8 @@ inline void randomizePalette(bool force = false)
     done = true;
 
     // 显式关闭：MANGOHUD_FUSION_RANDOM_COLORS=0（保持出厂默认色）
-    if (const char* e = std::getenv("MANGOHUD_FUSION_RANDOM_COLORS")) {
-        if (*e && std::string(e) == "0")
-            return;
-    }
+    if (!randomColorsEnabled())
+        return;
 
     // 种子：时间 + 地址随机化 + 高精度时钟，保证每次启动都不同
     static int entropy = 0;
@@ -292,6 +300,43 @@ inline void randomizePalette(bool force = false)
     char hexbuf[16];
     std::snprintf(hexbuf, sizeof(hexbuf), "%06X", kColPanelRgb);
     kPanelHex = hexbuf;
+}
+
+/**
+ * 把当前这套（随机）配色强行写进 HUD 的颜色参数 —— 标准 HUD 也一起吃。
+ *
+ * 调用点：set_parameters_from_options() 的**最后**。
+ * 因为它在所有显式颜色解析之后运行，所以连配置串里写死的
+ * gpu_color=... / fps_color=... 也会被本次启动的随机色覆盖。
+ * MANGOHUD_FUSION_RANDOM_COLORS=0 时不覆盖（完全尊重配置）。
+ */
+inline void applyRandomColorsToParams(overlay_params *p)
+{
+    if (!p || !randomColorsEnabled())
+        return;
+
+    randomizePalette();   // 幂等：进程内只随机一次
+
+    const uint32_t white = kColValue;
+    p->gpu_color       = kColGpu;
+    p->cpu_color       = kColCpu;
+    p->vram_color      = kColVram;
+    p->ram_color       = kColRam;
+    p->battery_color   = kColBat;
+    p->engine_color    = kColFps;
+    p->network_color   = kColCpu;
+    p->frametime_color = kColGraph;
+    p->io_color        = kColDim;
+    p->wine_color      = kColDim;
+    p->text_color      = white;
+
+    // 数值恒为白：三段阈值色拉平（否则高负载会把数字染成红/黄）
+    p->gpu_load_color = {white, white, white};
+    p->cpu_load_color = {white, white, white};
+    p->fps_color      = {white, white, white};
+
+    // 面板底色跟着随机色系走（0xRRGGBB）
+    p->background_color = kColPanelRgb & 0x00FFFFFFu;
 }
 
 /**

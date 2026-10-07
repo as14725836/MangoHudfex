@@ -816,6 +816,10 @@ set_parameters_from_options(struct overlay_params *params)
       }
       SPDLOG_ERROR("Unknown option '{}'", it.first.c_str());
    }
+
+   // 内置随机配色：放在**所有选项解析之后**，所以配置串里写死的颜色也会被本次
+   // 启动的随机色覆盖（MANGOHUD_FUSION_RANDOM_COLORS=0 可关闭）。
+   fusionhud::applyRandomColorsToParams(params);
 }
 
 static void
