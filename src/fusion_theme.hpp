@@ -25,6 +25,10 @@
 #include "overlay_params.h"
 #include <cstdint>
 #include <string>
+#include <random>
+#include <chrono>
+#include <cstdlib>
+#include <cstdio>
 #include <vector>
 #include <utility>
 #include <cmath>
@@ -37,22 +41,25 @@ namespace fusionhud {
 // 色相分离：0(红) / 42(黄) / 150(绿) / 175(青) / 213(蓝) / 265(紫)
 // 旧版的 RAM 粉(330) 与 BAT 橙(30) 都压在这次暖色区里，六个标签里有三个偏红，
 // 远看就糊成一片。现在暖色只保留 FPS 一处红（低帧警示），其余全走冷色。
-constexpr uint32_t kColGpu    = 0xFF6EE7A0;  // colGpu   绿   h150
-constexpr uint32_t kColCpu    = 0xFF5AA9FF;  // colCpu   蓝   h213
-constexpr uint32_t kColVram   = 0xFFB08CFF;  // colVram  紫   h265
-constexpr uint32_t kColRam    = 0xFF45D6C8;  // colRam   青   h175（原粉 330）
-constexpr uint32_t kColBat    = 0xFFFFD166;  // colBat   黄   h 42（原橙 30）
-constexpr uint32_t kColFps    = 0xFFFF6B6B;  // colFps   红   h  0（唯一暖红）
-constexpr uint32_t kColGraph  = 0xFF6EE7A0;  // colGraph 绿（与 GPU 同色）
+// ↑ 上面是"出厂默认"色（也是下面这些变量的初始值）。
+// 随机配色功能会覆盖它们：见文件末尾的 randomizePalette()。
+// 之所以能直接改名字不变：这些色一律只在运行期使用（无 constexpr 上下文）。
+inline uint32_t kColGpu    = 0xFF6EE7A0;  // colGpu   默认绿   h150
+inline uint32_t kColCpu    = 0xFF5AA9FF;  // colCpu   默认蓝   h213
+inline uint32_t kColVram   = 0xFFB08CFF;  // colVram  默认紫   h265
+inline uint32_t kColRam    = 0xFF45D6C8;  // colRam   默认青   h175
+inline uint32_t kColBat    = 0xFFFFD166;  // colBat   默认黄   h 42
+inline uint32_t kColFps    = 0xFFFF6B6B;  // colFps   默认红   h  0
+inline uint32_t kColGraph  = 0xFF6EE7A0;  // colGraph 默认与 GPU 同色
 constexpr uint32_t kColValue  = 0xFFFFFFFF;  // colValue 数值白
 constexpr uint32_t kColDim    = 0xFFC2CEDA;  // colDim   标签灰（略收，避免抢数值的视线）
 constexpr uint32_t kColUnit   = 0xFF9AA7B8;  // 单位后缀（比标签再淡一档，形成层级）
 constexpr uint32_t kColLo     = 0xFFF7FAFF;  // colLo    AVG / 1% / 0.1% / 0.01%
 /** 面板描边色：AppThemeState.getCurrentAccentArgb() 的默认值 */
-constexpr uint32_t kColAccent = 0xFFA374FF;
+inline uint32_t kColAccent = 0xFFA374FF;
 /** 面板底色（深蓝黑）：与紫色强调色同色系，比纯黑更有"材质"感 */
-constexpr uint32_t kColPanelRgb  = 0x000B0F16u;
-constexpr const char* kPanelHex  = "0B0F16";
+inline uint32_t kColPanelRgb  = 0x000B0F16u;
+inline std::string kPanelHex  = "0B0F16";
 /** 面板内高光描边（1px，白 9%）：玻璃质感 */
 constexpr uint32_t kColPanelEdge = 0x18FFFFFFu;
 /** 面板外投影（两层：近处深、远处淡） */
@@ -191,6 +198,102 @@ inline std::string hex6(uint32_t argb) {
     return s;
 }
 
+// ============================================================================
+// 内置随机配色（默认开启，零配置）
+//
+// 每次启动进程时随机选一套配色：6 个指标色在色环上等距 60° 排布，只随机
+// 「起始色相」与「槽位旋转」，饱和度/明度固定 —— 所以每次都不一样，但都好看、
+// 都清晰（不会出现两个指标撞色或某个色看不清）。
+//
+// 关掉：MANGOHUD_FUSION_RANDOM_COLORS=0
+// ============================================================================
+namespace detail {
+
+inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+/** HSL -> 0xFFRRGGBB */
+inline uint32_t hslToRgb(float h, float s, float l)
+{
+    h = std::fmod(h, 360.0f);
+    if (h < 0.0f)
+        h += 360.0f;
+    s = clampf(s, 0.0f, 1.0f);
+    l = clampf(l, 0.0f, 1.0f);
+    const float c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
+    const float hp = h / 60.0f;
+    const float x = c * (1.0f - std::fabs(std::fmod(hp, 2.0f) - 1.0f));
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    if (hp < 1.0f)      { r = c; g = x; }
+    else if (hp < 2.0f) { r = x; g = c; }
+    else if (hp < 3.0f) { g = c; b = x; }
+    else if (hp < 4.0f) { g = x; b = c; }
+    else if (hp < 5.0f) { r = x; b = c; }
+    else                { r = c; b = x; }
+    const float m = l - c * 0.5f;
+    const uint32_t R = static_cast<uint32_t>(std::lround(clampf(r + m, 0.0f, 1.0f) * 255.0f));
+    const uint32_t G = static_cast<uint32_t>(std::lround(clampf(g + m, 0.0f, 1.0f) * 255.0f));
+    const uint32_t B = static_cast<uint32_t>(std::lround(clampf(b + m, 0.0f, 1.0f) * 255.0f));
+    return 0xFF000000u | (R << 16) | (G << 8) | B;
+}
+
+} // namespace detail
+
+/**
+ * 生成并应用一套随机配色。进程内只做一次（除非 force）。
+ * 首次调用点：fusionThemeOptions() —— 也就是任何档位初始化的最前面，
+ * 保证在颜色被消费之前就位。
+ */
+inline void randomizePalette(bool force = false)
+{
+    static bool done = false;
+    if (done && !force)
+        return;
+    done = true;
+
+    // 显式关闭：MANGOHUD_FUSION_RANDOM_COLORS=0（保持出厂默认色）
+    if (const char* e = std::getenv("MANGOHUD_FUSION_RANDOM_COLORS")) {
+        if (*e && std::string(e) == "0")
+            return;
+    }
+
+    // 种子：时间 + 地址随机化 + 高精度时钟，保证每次启动都不同
+    static int entropy = 0;
+    uint64_t seed = static_cast<uint64_t>(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    seed ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&entropy)) * 0x9E3779B97F4A7C15ull;
+    std::mt19937 rng(static_cast<uint32_t>(seed ^ (seed >> 32)));
+
+    std::uniform_real_distribution<float> base_hue(0.0f, 360.0f);
+    std::uniform_real_distribution<float> jitter(-0.06f, 0.06f);
+    std::uniform_int_distribution<int> slot_rot(0, 5);
+
+    const float h0 = base_hue(rng);            // 起始色相
+    const int rot = slot_rot(rng);             // 槽位旋转：同一色相不会永远落在同一个指标上
+    const float S = 0.62f;                     // 饱和度：足够艳，又不刺眼
+    const float L = 0.72f;                     // 明度：深色面板上对比稳定
+
+    auto hue_at = [&](int slot) { return h0 + 60.0f * static_cast<float>((slot + rot) % 6); };
+    auto shade = [&](int slot) {
+        return detail::hslToRgb(hue_at(slot), S, detail::clampf(L + jitter(rng), 0.60f, 0.86f));
+    };
+
+    kColGpu  = shade(0);
+    kColCpu  = shade(1);
+    kColVram = shade(2);
+    kColRam  = shade(3);
+    kColBat  = shade(4);
+    kColFps  = shade(5);
+    kColGraph = kColGpu;                       // 折线图与 GPU 同色（沿用原设计）
+
+    kColAccent = detail::hslToRgb(h0 + 30.0f, 0.55f, 0.70f);
+
+    // 面板底色：同色系极暗调（L≈0.07），整体协调但不会偏色到影响读字
+    kColPanelRgb = detail::hslToRgb(h0, 0.28f, 0.07f) & 0x00FFFFFFu;
+    char hexbuf[16];
+    std::snprintf(hexbuf, sizeof(hexbuf), "%06X", kColPanelRgb);
+    kPanelHex = hexbuf;
+}
+
 /**
  * FusionHUD 主题 → MangoHud 配置键值表。
  * 交给 overlay_params.cpp 的 add_to_options() 走**正常解析路径**写入，
@@ -199,6 +302,9 @@ inline std::string hex6(uint32_t argb) {
 inline std::vector<std::pair<std::string, std::string>>
 fusionThemeOptions(FusionSize size, float bg_opacity = kBgOpacityDefault,
                    float outline_intensity = kOutlineDefault) {
+    // 内置随机配色：进程内第一次走到这里就定色（MANGOHUD_FUSION_RANDOM_COLORS=0 可关）
+    randomizePalette();
+
     std::vector<std::pair<std::string, std::string>> o;
 
     // ---- 指标色（标签用彩色，数值恒为 colValue）----

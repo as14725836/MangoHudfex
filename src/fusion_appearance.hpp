@@ -330,6 +330,8 @@ inline void applyFusionLayout(const overlay_params* params) {
 // Called from overlay_new_frame() every frame
 // ================================================================
 inline void applyFusionAppearance(const overlay_params& params) {
+    // 内置随机配色：幂等调用，确保在任何颜色被取用之前就位
+    randomizePalette();
     if (!isFusionActive(params)) return;
 
     ImGuiStyle& s = ImGui::GetStyle();
