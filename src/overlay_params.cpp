@@ -45,6 +45,21 @@
 #include "version.h"
 #include "fusion_layout.hpp"
 #include "fusion_theme.hpp"
+/** 裸的十六进制色值（2 / 6 / 8 位）？用来识别被逗号拆散的色值 token */
+static bool is_bare_hex_color_token(const char *s)
+{
+   if (!s)
+      return false;
+   const size_t n = strlen(s);
+   if (n != 2 && n != 6 && n != 8)
+      return false;
+   for (size_t i = 0; i < n; ++i)
+      if (!isxdigit(static_cast<unsigned char>(s[i])))
+         return false;
+   return true;
+}
+
+
 
 std::unique_ptr<fpsMetrics> fpsmetrics;
 std::mutex config_mtx;
@@ -825,6 +840,10 @@ parse_overlay_env(struct overlay_params *params,
    }
 
    presets(current_preset, params);
+   // 三段色在 MANGOHUD_CONFIG 里用逗号写会跟选项分隔符撞车（被拆成额外的裸色值）。
+   // 记住最近解析过的多色选项，遇到裸色值并回去，用 ':' 重新提交。
+   std::string multi_color_key, multi_color_val;
+
    env = env_start;
 
    while ((num = parse_string(env, key, value)) != 0) {
@@ -833,6 +852,22 @@ parse_overlay_env(struct overlay_params *params,
       env += num;
       if (!strcmp("preset", key)) {
          continue; // Avoid 'Unknown option' error
+      }
+
+      // 容错：MANGOHUD_CONFIG 里逗号是选项分隔符，三色写法 "AA,BB,CC" 会被拆成
+      // 额外的裸色值 —— 并回上一个多色选项（parse_load_color 的分隔符是 ",:+"）。
+      if (!strcmp("gpu_load_color", key) || !strcmp("cpu_load_color", key) ||
+          !strcmp("fps_color", key))
+      {
+         multi_color_key = key;
+         multi_color_val = value;
+      }
+      else if (!multi_color_key.empty() && is_bare_hex_color_token(key))
+      {
+         multi_color_val += ":";
+         multi_color_val += key;
+         add_to_options(params, multi_color_key.c_str(), multi_color_val.c_str());
+         continue;
       }
 #define OVERLAY_PARAM_BOOL(name)                                       \
       if (!strcmp(#name, key)) {                                       \
