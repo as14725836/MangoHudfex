@@ -185,6 +185,8 @@ static std::string fusion_font_path(const overlay_params& params) {
    // 指定字体（钉死优先级）：存在就一定是它，不受目录里其它字体影响。
    // 想换字体：直接覆盖这些文件，或改这一列。
    static const char* kPinFonts[] = {
+      "/data/data/com.termux/files/usr/glibc/share/fonts/hksnt.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/hksnt.ttf",
       "/data/data/com.termux/files/usr/glibc/share/fonts/浪漫雅圆.ttf",
       "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/浪漫雅圆.ttf",
       "/data/data/com.termux/files/usr/glibc/share/fonts/FusionFont.ttf",
