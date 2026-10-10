@@ -33,9 +33,9 @@ mangohud_config() {
 mangohud_uninstall() {
     [ "$UID" -eq 0 ] || exec $SU_CMD bash "$0" uninstall
     rm -rfv "/usr/lib/mangohud"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.x86.json"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.json"
     rm -frv "/usr/share/doc/mangohud"
     rm -fv "/usr/share/man/man1/mangohud.1"
     rm -fv "/usr/bin/mangohud"
@@ -75,14 +75,14 @@ mangohud_install() {
     done
 
     echo DEFAULTLIB: $DEFAULTLIB
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libMangoHud.so /usr/lib/mangohud/lib64/libMangoHud.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libMangoHud.so /usr/lib/mangohud/lib32/libMangoHud.so
+    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libMangoHudfex.so /usr/lib/mangohud/lib64/libMangoHudfex.so
+    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libMangoHudfex.so /usr/lib/mangohud/lib32/libMangoHudfex.so
     /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libMangoHud_opengl.so /usr/lib/mangohud/lib64/libMangoHud_opengl.so
     /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libMangoHud_opengl.so /usr/lib/mangohud/lib32/libMangoHud_opengl.so
     /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libMangoHud_shim.so /usr/lib/mangohud/lib64/libMangoHud_shim.so
     /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libMangoHud_shim.so /usr/lib/mangohud/lib32/libMangoHud_shim.so
-    /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json /usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json
-    /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/MangoHud.x86.json /usr/share/vulkan/implicit_layer.d/MangoHud.x86.json
+    /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json /usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json
+    /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json /usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json
     /usr/bin/install -Dvm644 ./usr/share/man/man1/mangohud.1 /usr/share/man/man1/mangohud.1
     /usr/bin/install -Dvm644 ./usr/share/doc/mangohud/MangoHud.conf.example /usr/share/doc/mangohud/MangoHud.conf.example
     /usr/bin/install -vm755  ./usr/bin/mangohud /usr/bin/mangohud

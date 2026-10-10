@@ -416,13 +416,9 @@ inline float fusionOutlineWidth(float outline_intensity = kOutlineDefault) {
     return outline_intensity * kOutlineMaxSp;
 }
 
-/** 当前是否处于任一 FusionHUD 档位 */
-inline bool isFusionActive(const overlay_params& p) {
-    return p.enabled[OVERLAY_PARAM_ENABLED_fusion_full]    ||
-           p.enabled[OVERLAY_PARAM_ENABLED_fusion_tiles]   ||
-           p.enabled[OVERLAY_PARAM_ENABLED_fusion_pill]    ||
-           p.enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] ||
-           p.enabled[OVERLAY_PARAM_ENABLED_fusion_mega];
+/** FHUD-only：原版渲染已移除，外观/布局恒按 Fusion 处理 */
+inline bool isFusionActive(const overlay_params&) {
+    return true;
 }
 
 /**

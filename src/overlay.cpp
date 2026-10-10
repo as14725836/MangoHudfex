@@ -989,13 +989,10 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
       HUDElements.ralign_width = ralign_width = ImGui::CalcTextSize("A").x * 4 /* characters */;
       old_scale = real_params->font_scale;
    }
-   ImGuiTableFlags table_flags = ImGuiTableFlags_NoClip;
-   if(real_params->enabled[OVERLAY_PARAM_ENABLED_horizontal])
-      table_flags = ImGuiTableFlags_NoClip | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
 
    if (!real_params->no_display && !steam_focused && get_params()->table_columns){
-      if (real_params && fusionhud::isFusionActive(*real_params)) {
-         // ---- FusionHUD 档位：整块自绘（不再走 MangoHud 的表格渲染） ----
+      if (real_params) {
+         // ---- FusionHUD：唯一渲染路径（原版 MangoHud 表格渲染已移除） ----
          fusionhud::fr::Sources src;
          src.fps = data.fps > 0.0 ? data.fps : ::fps;
          src.frametime_ms = ::frametime;
@@ -1141,36 +1138,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          ImGui::End();
          ImGui::PopStyleVar();
          window_size = fsize;
-      } else {
-      ImGui::Begin("Main", &gui_open, ImGuiWindowFlags_NoDecoration);
-      if (ImGui::BeginTable("hud", real_params->table_columns, table_flags )) {
-         HUDElements.place = 0;
-         for (auto& func : HUDElements.ordered_functions){
-            if(!real_params->enabled[OVERLAY_PARAM_ENABLED_horizontal] && func.name != "exec")
-               ImGui::TableNextRow();
-            func.run();
-            HUDElements.place += 1;
-            if(!HUDElements.ordered_functions.empty() && real_params->enabled[OVERLAY_PARAM_ENABLED_horizontal] && HUDElements.ordered_functions.size() != (size_t)HUDElements.place)
-               horizontal_separator(params);
-         }
-
-         if (real_params->enabled[OVERLAY_PARAM_ENABLED_horizontal]) {
-            if (HUDElements.table_columns_count > 0 && HUDElements.table_columns_count < 65 )
-               real_params->table_columns = HUDElements.table_columns_count;
-            if(!real_params->enabled[OVERLAY_PARAM_ENABLED_horizontal_stretch]) {
-               float content_width = ImGui::GetContentRegionAvail().x - (real_params->table_columns * 64);
-               window_size = ImVec2(content_width, real_params->height);
-            }
-         }
-         ImGui::EndTable();
-         HUDElements.table_columns_count = 0;
-      }
-
-      if(logger->is_active())
-         ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(data.main_window_pos.x + window_size.x - 15, data.main_window_pos.y + 15), 10, real_params->engine_color, 20);
-      window_size = ImVec2(window_size.x, ImGui::GetCursorPosY() + 11.0f);
-      ImGui::End();
-      } // end FusionHUD 分支
+      } // FusionHUD：唯一渲染路径（原版 MangoHud 表格渲染已移除）
       if((now - logger->last_log_end()) < 12s && !logger->is_active())
          render_benchmark(data, params, window_size, height, now);
    }

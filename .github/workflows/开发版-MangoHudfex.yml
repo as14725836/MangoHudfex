@@ -156,14 +156,14 @@ jobs:
           find build/release -type f \( -name '*.so*' -o -name 'mangohud' -o -name '*.json' \) | head -30
 
           echo "--- 关键产物 ---"
-          if [ -f "build/src/libMangoHud.so" ]; then
-            echo "✅ 生成 Vulkan 层: build/src/libMangoHud.so"
-            file build/src/libMangoHud.so
+          if [ -f "build/src/libMangoHudfex.so" ]; then
+            echo "✅ 生成 Vulkan 层: build/src/libMangoHudfex.so"
+            file build/src/libMangoHudfex.so
             ls -lh build/src/*.so
             echo "📌 MangoHud 版本:"
-            strings build/src/libMangoHud.so | grep -m1 -E '^v?[0-9]+\.[0-9]+\.[0-9]+' || echo "⚠️ 无法从二进制读取版本"
+            strings build/src/libMangoHudfex.so | grep -m1 -E '^v?[0-9]+\.[0-9]+\.[0-9]+' || echo "⚠️ 无法从二进制读取版本"
           else
-            echo "❌ 未找到 libMangoHud.so"
+            echo "❌ 未找到 libMangoHudfex.so"
             exit 1
           fi
 
@@ -255,7 +255,7 @@ jobs:
             export MANGOHUD=1
 
             # 4. 或直接 LD_PRELOAD（OpenGL / 通用）
-            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/lib/mangohud/libMangoHud.so
+            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/lib/mangohud/libMangoHudfex.so
             ```
 
             ### ⚠️ 注意事项

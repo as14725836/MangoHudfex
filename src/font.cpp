@@ -120,7 +120,7 @@ static std::string first_usable_font(const std::string& dir) {
    return preferred.empty() ? first : preferred;
 }
 
-// libMangoHud.so 自己所在目录：用来定位随包字体，不受安装前缀影响。
+// libMangoHudfex.so 自己所在目录：用来定位随包字体，不受安装前缀影响。
 // 读 /proc/self/maps 而不是 dladdr()，避免额外链接依赖。
 static std::string libmangohud_dir() {
    FILE* f = fopen("/proc/self/maps", "r");
@@ -136,7 +136,7 @@ static std::string libmangohud_dir() {
       size_t len = strlen(p);
       while (len > 0 && (p[len - 1] == '\n' || p[len - 1] == '\r' || p[len - 1] == ' '))
          p[--len] = '\0';
-      if (strstr(p, "libMangoHud.so")) {
+      if (strstr(p, "libMangoHudfex.so")) {
          hit = p;
          break;
       }
@@ -268,7 +268,7 @@ static std::string fusion_font_path(const overlay_params& params) {
          return p;
 
 
-   // 2) 再按 libMangoHud.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
+   // 2) 再按 libMangoHudfex.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
    if (const std::string lib_dir = libmangohud_dir(); !lib_dir.empty()) {
       static const char* kRel[] = {
          "../../share/mangohud/fonts/",   // lib/mangohud/ 安装（本包/多数发行版）

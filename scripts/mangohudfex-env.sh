@@ -57,13 +57,13 @@ if [ ! -d /dev/shm ]; then
     echo "[!] /dev/shm 不存在：FEX 统计与层通信都会失败" >&2
     _warn=1
 fi
-if [ ! -f "$MANGO_LAYER_DIR/MangoHud.aarch64.json" ]; then
-    echo "[!] 未找到层清单：$MANGO_LAYER_DIR/MangoHud.aarch64.json" >&2
+if [ ! -f "$MANGO_LAYER_DIR/MangoHudfex.aarch64.json" ]; then
+    echo "[!] 未找到层清单：$MANGO_LAYER_DIR/MangoHudfex.aarch64.json" >&2
     echo "    请先运行 scripts/build-termux-glibc.sh --install" >&2
     _warn=1
 fi
-if [ ! -f "$MANGO_LIB_DIR/libMangoHud.so" ]; then
-    echo "[!] 未找到 $MANGO_LIB_DIR/libMangoHud.so" >&2
+if [ ! -f "$MANGO_LIB_DIR/libMangoHudfex.so" ]; then
+    echo "[!] 未找到 $MANGO_LIB_DIR/libMangoHudfex.so" >&2
     _warn=1
 fi
 if [ "$_warn" -eq 1 ]; then

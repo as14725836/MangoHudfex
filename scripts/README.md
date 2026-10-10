@@ -23,8 +23,8 @@
 没有 `usr/` 这一层），所以默认用空前缀，安装树为：
 
 ```
-<glibc>/lib/mangohud/libMangoHud.so
-<glibc>/share/vulkan/implicit_layer.d/MangoHud.aarch64.json
+<glibc>/lib/mangohud/libMangoHudfex.so
+<glibc>/share/vulkan/implicit_layer.d/MangoHudfex.aarch64.json
 <glibc>/bin/mangohud
 ```
 

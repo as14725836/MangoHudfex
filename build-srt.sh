@@ -11,7 +11,7 @@ VERSION=$(git describe --long --tags --always | sed 's/\([^-]*-g\)/r\1/;s/-/./g;
 
 dependencies() {
 
-    if [[ ! -f build-srt/release/usr/lib/libMangoHud.so ]]; then
+    if [[ ! -f build-srt/release/usr/lib/libMangoHudfex.so ]]; then
         install() {
             set +e
             for i in ${DEPS[@]}; do
@@ -88,9 +88,9 @@ build() {
 }
 
 package() {
-    LIB="build-srt/release/usr/lib/mangohud/lib/libMangoHud.so"
-    LIB32="build-srt/release/usr/lib/mangohud/lib32/libMangoHud.so"
-    if [[ ! -f "$LIB" || "$LIB" -ot "build-srt/meson64/src/libMangoHud.so" ]]; then
+    LIB="build-srt/release/usr/lib/mangohud/lib/libMangoHudfex.so"
+    LIB32="build-srt/release/usr/lib/mangohud/lib32/libMangoHudfex.so"
+    if [[ ! -f "$LIB" || "$LIB" -ot "build-srt/meson64/src/libMangoHudfex.so" ]]; then
         build
     fi
     tar --numeric-owner --owner=0 --group=0 \

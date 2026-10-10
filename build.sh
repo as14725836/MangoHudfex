@@ -25,7 +25,7 @@ for os_release in ${OS_RELEASE_FILES[@]} ; do
 done
 
 dependencies() {
-    if [[ ! -f build/release/usr/lib/libMangoHud.so ]]; then
+    if [[ ! -f build/release/usr/lib/libMangoHudfex.so ]]; then
         missing_deps() {
             echo "# Missing dependencies:$INSTALL"
             read -rp "Do you wish the script to install these packages? [y/N]" PERMISSION
@@ -170,9 +170,9 @@ build() {
 }
 
 package() {
-    LIB="build/release/usr/lib/mangohud/lib64/libMangoHud.so"
-    LIB32="build/release/usr/lib/mangohud/lib32/libMangoHud.so"
-    if [[ ! -f "$LIB" || "$LIB" -ot "build/meson64/src/libMangoHud.so" ]]; then
+    LIB="build/release/usr/lib/mangohud/lib64/libMangoHudfex.so"
+    LIB32="build/release/usr/lib/mangohud/lib32/libMangoHudfex.so"
+    if [[ ! -f "$LIB" || "$LIB" -ot "build/meson64/src/libMangoHudfex.so" ]]; then
         build
     fi
     tar --numeric-owner --owner=0 --group=0 \
@@ -195,9 +195,9 @@ uninstall() {
     rm -rfv "/usr/share/doc/mangohud"
     rm -fv "/usr/share/man/man1/mangohud.1"
     rm -fv "/usr/share/vulkan/implicit_layer.d/mangohud.json"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.json"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.x86.json"
-    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json"
+    rm -fv "/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json"
     rm -fv "/usr/bin/mangohud"
     rm -fv "/usr/bin/mangoplot"
     rm -fv "/usr/bin/mangohud.x86"
@@ -228,17 +228,17 @@ install() {
     fi
 
     echo DEFAULTLIB: $DEFAULTLIB
-    /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib64/libMangoHud.so /usr/lib/mangohud/lib64/libMangoHud.so
+    /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib64/libMangoHudfex.so /usr/lib/mangohud/lib64/libMangoHudfex.so
     /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib64/libMangoHud_opengl.so /usr/lib/mangohud/lib64/libMangoHud_opengl.so
     /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib64/libMangoHud_shim.so /usr/lib/mangohud/lib64/libMangoHud_shim.so
     if [ "$MACHINE" = "x86_64" ]; then
-      /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib32/libMangoHud.so /usr/lib/mangohud/lib32/libMangoHud.so
+      /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib32/libMangoHudfex.so /usr/lib/mangohud/lib32/libMangoHudfex.so
       /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib32/libMangoHud_opengl.so /usr/lib/mangohud/lib32/libMangoHud_opengl.so
       /usr/bin/install -Dvm644 ./build/release/usr/lib/mangohud/lib32/libMangoHud_shim.so /usr/lib/mangohud/lib32/libMangoHud_shim.so
     fi
 
-    /usr/bin/install -Dvm644 ./build/release/usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json /usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json
-    /usr/bin/install -Dvm644 ./build/release/usr/share/vulkan/implicit_layer.d/MangoHud.x86.json /usr/share/vulkan/implicit_layer.d/MangoHud.x86.json
+    /usr/bin/install -Dvm644 ./build/release/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json /usr/share/vulkan/implicit_layer.d/MangoHudfex.x86_64.json
+    /usr/bin/install -Dvm644 ./build/release/usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json /usr/share/vulkan/implicit_layer.d/MangoHudfex.x86.json
     /usr/bin/install -Dvm644 ./build/release/usr/share/man/man1/mangohud.1 /usr/share/man/man1/mangohud.1
     /usr/bin/install -Dvm644 ./build/release/usr/share/doc/mangohud/MangoHud.conf.example /usr/share/doc/mangohud/MangoHud.conf.example
     /usr/bin/install -vm755  ./build/release/usr/bin/mangohud /usr/bin/mangohud

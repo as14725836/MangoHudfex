@@ -61,7 +61,7 @@ if not os.path.isdir(GLIBC_ROOT):
 else:
     print("%s glibc 根存在" % OK)
 
-for name in ("libMangoHud.so", "libMangoHud_shim.so", "libMangoHud_opengl.so"):
+for name in ("libMangoHudfex.so", "libMangoHud_shim.so", "libMangoHud_opengl.so"):
     p = os.path.join(LIB_DIR, name)
     if os.path.isfile(p):
         print("%s %s (%.1f MB)" % (OK, p, os.path.getsize(p) / 1048576.0))
@@ -121,7 +121,7 @@ for soname in ("libwayland-client.so.0", "libxkbcommon.so.0"):
     if hit:
         print("%s %s -> %s" % (OK, soname, hit))
     else:
-        print("%s %s 未找到（libMangoHud.so 的硬依赖，会导致整层加载失败）" % (BAD, soname))
+        print("%s %s 未找到（libMangoHudfex.so 的硬依赖，会导致整层加载失败）" % (BAD, soname))
         problems.append("缺少 %s —— 在 glibc 源里安装 wayland / libxkbcommon" % soname)
 
 # glibc 版本（产物要求 >= 2.38）
@@ -139,7 +139,7 @@ if libc:
             mx = max(v[0] for v in vers)
             print("%s libc %s 最高 GLIBC_2.%d（产物要求 >= 2.38）" % (OK, libc, mx))
             if mx < 38:
-                print("%s glibc 版本偏低，libMangoHud.so 可能报 GLIBC_2.38 not found" % WARN)
+                print("%s glibc 版本偏低，libMangoHudfex.so 可能报 GLIBC_2.38 not found" % WARN)
                 problems.append("glibc 最高只到 2.3%d，低于产物要求 2.38" % mx)
     except Exception:
         pass

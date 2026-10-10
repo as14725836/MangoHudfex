@@ -219,7 +219,7 @@ mangohud_static_lib = static_library(
 )
 
 mangohud_shared_lib = shared_library(
-  'MangoHud',
+  'MangoHudfex',
   objects: mangohud_static_lib.extract_all_objects(),
   link_with: mangohud_static_lib,
   link_args : link_args,
@@ -332,7 +332,7 @@ if is_unixy
 endif
 
 configure_file(input : 'mangohud.json.in',
-  output : '@0@.@1@.json'.format(meson.project_name(), host_machine.cpu_family()),
+  output : 'MangoHudfex.@0@.json'.format(host_machine.cpu_family()),
   configuration : conf_data,
   install : true,
   install_dir : join_paths(get_option('datadir'), 'vulkan', 'implicit_layer.d'),
