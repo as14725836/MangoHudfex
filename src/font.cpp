@@ -182,6 +182,22 @@ static std::string fusion_font_path(const overlay_params& params) {
       if (*env && is_loadable_ttf(env))
          return env;
    }
+   // 指定字体（钉死优先级）：存在就一定是它，不受目录里其它字体影响。
+   // 想换字体：直接覆盖这些文件，或改这一列。
+   static const char* kPinFonts[] = {
+      "/data/data/com.termux/files/usr/glibc/share/fonts/浪漫雅圆.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/浪漫雅圆.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/fonts/FusionFont.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/FusionFont.ttf",
+      "/data/data/com.termux/files/usr/share/fonts/浪漫雅圆.ttf",
+      "/data/data/com.termux/files/usr/share/mangohud/fonts/浪漫雅圆.ttf",
+   };
+   for (const char* p : kPinFonts) {
+      if (is_loadable_ttf(p)) {
+         SPDLOG_INFO("fusion font: pinned font: {}", p);
+         return p;
+      }
+   }
    // 用户自放字体：fonts 目录里任何 .ttf 都优先于随包中文子集
    static const char* kUserFontDirs[] = {
       "/data/data/com.termux/files/usr/glibc/share/fonts",
