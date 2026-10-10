@@ -48,6 +48,7 @@ inline const std::unordered_map<std::string, const char*>& table() {
         {"Frametime", "帧时间"},
         {"AVG", "平均"},
         {"Run Mode", "运行模式"},
+        {"Program", "程序"},
         {"Frame Count", "帧数"},
         {"GPU Load", "显卡占用"},
         {"GPU Temp", "显卡温度"},

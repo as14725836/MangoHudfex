@@ -19,6 +19,7 @@
 #include <unistd.h>
 #endif
 #include <cctype>
+#include <vector>
 #include <cstdio>
 #include "cpu.h"
 #include "gpu.h"
@@ -907,6 +908,106 @@ static std::string fusion_wine_run_mode_text()
 }
 
 /**
+ * Wine 打开的程序名（FHUD 最下面一行，如 game.exe）。
+ *
+ * 探测顺序：环境变量 MANGOHUD_FUSION_PROG → 本进程 cmdline → 向上最多 8 层父进程；
+ * 从参数里找第一个 *.exe（大小写不敏感），取文件名（去掉 wine 路径前缀）。
+ * 探测不到返回空（整行隐藏）。
+ */
+#ifdef __linux__
+static bool fusion_read_cmdline(int pid, std::vector<std::string>& out)
+{
+   char path[64];
+   std::snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
+   FILE* f = std::fopen(path, "rb");
+   if (!f)
+      return false;
+   char buf[4096];
+   size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+   std::fclose(f);
+   if (n == 0)
+      return false;
+   buf[n] = 0;
+   for (size_t i = 0; i < n;) {
+      std::string a(buf + i);
+      if (!a.empty())
+         out.push_back(a);
+      i += a.size() + 1;
+   }
+   return true;
+}
+static int fusion_read_ppid(int pid)
+{
+   char path[64];
+   std::snprintf(path, sizeof(path), "/proc/%d/status", pid);
+   FILE* f = std::fopen(path, "r");
+   if (!f)
+      return -1;
+   char line[256];
+   int pp = -1;
+   while (std::fgets(line, sizeof(line), f)) {
+      if (line[0]=='P' && line[1]=='P' && line[2]=='i' && line[3]=='d' && line[4]==':') {
+         pp = std::atoi(line + 5);
+         break;
+      }
+   }
+   std::fclose(f);
+   return pp;
+}
+/** 取路径末段（同时支持斜杠与反斜杠两种分隔） */
+static std::string fusion_exe_base(const std::string& a)
+{
+   size_t p = a.find_last_of('/');
+   size_t q = a.find_last_of(static_cast<char>(92));
+   if (q != std::string::npos && (p == std::string::npos || q > p))
+      p = q;
+   return (p == std::string::npos) ? a : a.substr(p + 1);
+}
+static std::string fusion_exe_from_args(const std::vector<std::string>& args)
+{
+   for (const std::string& a : args) {
+      if (a.size() < 4)
+         continue;
+      std::string tail = a.substr(a.size() - 4);
+      for (char& c : tail)
+         c = (char)std::tolower((unsigned char)c);
+      if (tail != ".exe")
+         continue;
+      std::string b = fusion_exe_base(a);
+      if (!b.empty())
+         return b;
+   }
+   return std::string();
+}
+#endif
+static std::string fusion_wine_program_text()
+{
+   static const std::string cached = []() -> std::string {
+#ifdef __linux__
+      if (const char* e = std::getenv("MANGOHUD_FUSION_PROG"))
+         if (*e)
+            return std::string(e);
+      int pid = (int)getpid();
+      for (int depth = 0; depth < 8; ++depth) {
+         std::vector<std::string> args;
+         if (fusion_read_cmdline(pid, args)) {
+            std::string r = fusion_exe_from_args(args);
+            if (!r.empty())
+               return r;
+         }
+         int pp = fusion_read_ppid(pid);
+         if (pp <= 1 || pp == pid)
+            break;
+         pid = pp;
+      }
+#endif
+      return std::string();
+   }();
+   return cached;
+}
+
+
+/**
  * 当前显示会话（给 FHUD 的 DISP 行用）。
  *
  * 口径优先“实际创建 surface 时记下的类型”（vulkan 的 wayland hook、x11 连接探测），
@@ -1073,6 +1174,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.outline = real_params->fusion_outline > 0.0f ? real_params->fusion_outline : 0.0f;
          fo.disp_text = fusion_display_server_text();
          fo.run_mode_text = fusion_wine_run_mode_text();
+         fo.prog_text = fusion_wine_program_text();
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 

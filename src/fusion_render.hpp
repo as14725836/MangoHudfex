@@ -603,6 +603,7 @@ struct Frame {
     std::string credit;   // 画面署名（自绘模式下由本渲染器负责显示）
     std::string disp_text;   // DISP 行：当前显示会话（X11 / Wayland / …）
     std::string run_mode_text;   // 运行模式行（最下面）：FEX-aarch64-wow64 / BOX64-x86_64-wow64
+    std::string prog_text;   // 最下面一行：wine 打开的程序名（game.exe）
     /** 最后一段文字的基线 + 最后一次 place() 的右端：给底部时钟对齐用 */
     float last_baseline = -1.0f;
     float last_call_right = 0.0f;
@@ -904,6 +905,11 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     if (!f.run_mode_text.empty())
         add(hud_i18n::tr("Run Mode"), kColAccent,
             std::vector<Span>{Span{f.run_mode_text, kColInfo, row_px}});
+
+    // 程序名：wine 打开的程序（game.exe …），排在最下面（在“运行模式”之后再往下一行）
+    if (!f.prog_text.empty())
+        add(hud_i18n::tr("Program"), kColAccent,
+            std::vector<Span>{Span{f.prog_text, kColInfo, row_px}});
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
@@ -1629,6 +1635,8 @@ struct Options {
     /** 运行模式行（最下面一项）：FEX-aarch64-wow64 / BOX64-x86_64-wow64。
      *  由 overlay.cpp 读 $PREFIX/glibc/opt/conf/wine_path.conf 后填充。 */
     std::string run_mode_text;
+    /** 最下面一行：wine 打开的程序名（如 game.exe）。由 overlay.cpp 探测填充。 */
+    std::string prog_text;
 };
 
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
@@ -1647,6 +1655,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.credit = o.credit;
     f.disp_text = o.disp_text;
     f.run_mode_text = o.run_mode_text;
+    f.prog_text = o.prog_text;
 
     switch (size) {
         case FusionSize::FULL:    build_full(f, s, c); break;
