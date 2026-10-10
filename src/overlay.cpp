@@ -12,6 +12,12 @@
 #include "overlay.h"
 #include <chrono>
 #include <cstdlib>
+#include <cstddef>
+#ifdef __linux__
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#endif
 #include <cctype>
 #include <cstdio>
 #include "cpu.h"
@@ -799,6 +805,42 @@ void horizontal_separator(struct overlay_params& params) {
     ImGui::Spacing();
 }
 
+#ifdef __linux__
+/**
+ * 抽象 socket 探测：某些 X server（Termux:X11 就是典型）监听的是
+ * abstract unix socket "/tmp/.X11-unix/X0"（名字带前导 NUL，文件系统里看不见），
+ * 并且 Termux 的 libx11 默认就走这条路 —— 于是“在用 X11”和“环境里有 DISPLAY”
+ * 并不等价。这里主动连一下，连得上就说明当前真的有 X server。
+ * 只探测一次并缓存（显示后端运行期不会变，顺带避免每帧 syscall）。
+ */
+static bool x11_abstract_display_available()
+{
+   static const bool cached = []() -> bool {
+      for (int d = 0; d < 10; ++d) {
+         const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+         if (fd < 0)
+            return false;
+         struct sockaddr_un sa;
+         std::memset(&sa, 0, sizeof(sa));
+         sa.sun_family = AF_UNIX;
+         char name[48];
+         std::snprintf(name, sizeof(name), "/tmp/.X11-unix/X%d", d);
+         const size_t nlen = std::strlen(name);
+         // 抽象命名空间：sun_path[0] 保持 '\0'，名字从 sun_path+1 开始
+         std::memcpy(sa.sun_path + 1, name, nlen);
+         const socklen_t alen =
+            static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) + 1 + nlen);
+         const bool ok = (::connect(fd, reinterpret_cast<struct sockaddr*>(&sa), alen) == 0);
+         ::close(fd);
+         if (ok)
+            return true;
+      }
+      return false;
+   }();
+   return cached;
+}
+#endif
+
 /**
  * 当前显示会话（给 FHUD 的 DISP 行用）。
  *
@@ -821,6 +863,11 @@ static std::string fusion_display_server_text()
       return (xi && *xi) ? "XWayland" : "Wayland";
    if (xi && *xi)
       return "X11";
+#ifdef __linux__
+   // 没有 DISPLAY 也可能是真在用 X11（Termux:X11 抽象 socket）
+   if (x11_abstract_display_available())
+      return "X11";
+#endif
    const char* aroot = std::getenv("ANDROID_ROOT");
    const char* adata = std::getenv("ANDROID_DATA");
    if ((aroot && *aroot) || (adata && *adata))
