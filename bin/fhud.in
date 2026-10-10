@@ -87,6 +87,28 @@ for exe in $DISABLE_LD_PRELOAD; do
     fi
 done
 
+# 升级保护：剔除环境里残留的旧 MangoHud 预载项。
+# 旧路径（lib/mangohud/...、libMangoHud*.so）在新版本里已不存在，
+# 继续传给 ld.so 会直接报错（“去找旧 mangohud 文件”就是这么来的）。
+if [ -n "${LD_PRELOAD:-}" ]; then
+    _pre=""
+    _oldifs=$IFS; IFS=':'
+    for _p in $LD_PRELOAD; do
+        case "$_p" in
+            *libMangoHud*|*/mangohud/*)
+                echo "note: 已忽略旧版预载项 $_p" >&2
+                ;;
+            '')
+                ;;
+            *)
+                _pre="${_pre:+$_pre:}$_p"
+                ;;
+        esac
+    done
+    IFS=$_oldifs
+    LD_PRELOAD="$_pre"
+fi
+
 if [ "$disable_preload" = true ]; then
     exec env MANGOHUD=1 "$@"
 else

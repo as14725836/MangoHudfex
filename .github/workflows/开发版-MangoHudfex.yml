@@ -242,6 +242,10 @@ jobs:
 
             ### 📥 安装方法
             ```bash
+            # 0. 从旧版本升级：先清掉旧命名残留（避免新旧层/旧 wrapper 混用报错）
+            rm -f  /data/data/com.termux/files/usr/glibc/share/vulkan/implicit_layer.d/MangoHud*.json
+            rm -rf /data/data/com.termux/files/usr/glibc/lib/mangohud
+            rm -f  /data/data/com.termux/files/usr/glibc/bin/mangohud /data/data/com.termux/files/usr/glibc/bin/mangoplot
             # 1. 解包到 Termux glibc 根（安装树为 usr/... 布局）
             tar -xzf termux-glibc-mangohudfex-dev-${{ env.VERSION }}.tar.gz \
               -C /data/data/com.termux/files/usr/glibc/

@@ -180,6 +180,13 @@ tar -czf "$TARBALL" -C "$DESTDIR_ABS" .
 if [ "$DO_INSTALL" -eq 1 ]; then
     [ -d "$GLIBC_ROOT" ] || die "GLIBC_ROOT 不存在: $GLIBC_ROOT"
     log "安装到 $GLIBC_ROOT"
+    # 清理旧命名残留（旧版本装过的 MangoHud*），避免新旧文件混用导致加载报错
+    rm -f  "$GLIBC_ROOT/share/vulkan/implicit_layer.d/MangoHud"*.json 2>/dev/null || true
+    rm -f  "$GLIBC_ROOT/usr/share/vulkan/implicit_layer.d/MangoHud"*.json 2>/dev/null || true
+    rm -rf "$GLIBC_ROOT/lib/mangohud" "$GLIBC_ROOT/usr/lib/mangohud" 2>/dev/null || true
+    rm -f  "$GLIBC_ROOT/bin/mangohud" "$GLIBC_ROOT/bin/mangoplot" 2>/dev/null || true
+    rm -f  "$GLIBC_ROOT/usr/bin/mangohud" "$GLIBC_ROOT/usr/bin/mangoplot" 2>/dev/null || true
+    rm -f  "$GLIBC_ROOT/lib/"libMangoHud* "$GLIBC_ROOT/usr/lib/"libMangoHud* 2>/dev/null || true
     tar -xzf "$TARBALL" -C "$GLIBC_ROOT"
     log "安装完成"
 fi

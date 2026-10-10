@@ -37,6 +37,20 @@
 `bin/fhud` 里的 shim 路径在**运行时按脚本自身位置自定位**（依次尝试 `../lib/fhud`、
 `../usr/lib/fhud` 等），因此两种布局都不会出现 `LD_PRELOAD` 指向不存在的文件。
 
+## 1.1 从旧版本升级（重要）
+旧版本的 `MangoHud*` 文件**不会被覆盖安装自动删除**，混用时会出现：
+- Vulkan loader 扫到旧层清单 `MangoHud*.json` → 去找已不存在的旧库 → 报错；
+- shell 里旧的 `LD_PRELOAD=.../lib/mangohud/...` → `fhud` 启动时 ld.so 报“找不到旧库”。
+
+处理（任选其一）：
+1. `--install` 安装时会**自动清理**旧命名（见脚本第 8 步）；
+2. 手动清：`./scripts/cleanup-legacy.sh [目标根目录]`；
+3. 最省事：把新包解到**全新的空目录**，不要和旧目录混用。
+
+`fhud` 包装器会自动剔除环境中残留的旧预载项（含 `libMangoHud`、`/mangohud/`
+的会被忽略并提示）；但 `VK_LAYER_PATH` 指向的目录里如果有旧 `MangoHud*.json`，
+Vulkan loader 仍会去加载——必须按上面的办法删掉。
+
 ## 2. 运行
 
 推荐用包装脚本，它会自动设置必需的环境变量：
