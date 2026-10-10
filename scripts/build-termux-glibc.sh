@@ -139,7 +139,7 @@ if [ "$LAYOUT" = "flat" ] && [ -d "$DESTDIR_ABS/usr" ]; then
     rm -rf "$DESTDIR_ABS/usr"
 fi
 
-SHIM="$DESTDIR_ABS${LIBDIR_ABS}/libMangoHud_shim.so"
+SHIM="$DESTDIR_ABS${LIBDIR_ABS}/libFHUD_shim.so"
 [ -f "$SHIM" ] || die "未找到 $SHIM，安装布局与预期不符"
 
 # ---------------- 4. 瘦身 ----------------
@@ -152,7 +152,7 @@ fi
 # 原产物写死 /usr/lib/mangohud/...，装到 glibc 根后必须改成绝对路径
 log "修正 Vulkan 层清单路径 -> ${GLIBC_ROOT}${LIBDIR_ABS}/"
 find "$DESTDIR_ABS${LAYER_DIR}" -name '*.json' -print0 2>/dev/null |
-    xargs -0 -r sed -i "s|\"library_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"library_path\" : \"${GLIBC_ROOT}${LIBDIR_ABS}/libMangoHudfex.so\"|"
+    xargs -0 -r sed -i "s|\"library_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"library_path\" : \"${GLIBC_ROOT}${LIBDIR_ABS}/libFHUD.so\"|"
 
 # ---------------- 6. wrapper 检查 ----------------
 # wrapper 里的 shim 路径由脚本**运行时自定位**（bin/mangohud.in），

@@ -325,7 +325,7 @@ You can also specify configuration file with `MANGOHUD_CONFIGFILE=/path/to/confi
 
 You can also specify presets file with `MANGOHUD_PRESETSFILE=/path/to/config`. This is especially useful when running mangohud in a sandbox such as flatpak.
 
-You can also specify custom hud libraries for OpenGL using `MANGOHUD_OPENGL_LIBS=/path/to/libMangoHud_opengl.so`. This is useful for testing MangoHud without modifying the installation on your system.
+You can also specify custom hud libraries for OpenGL using `MANGOHUD_OPENGL_LIBS=/path/to/libFHUD_opengl.so`. This is useful for testing MangoHud without modifying the installation on your system.
 
 A partial list of parameters are below. See the config file for a complete list.
 Parameters that are enabled by default have to be explicitly disabled. These (currently) are `fps`, `frame_timing`, `cpu_stats` (cpu load), `gpu_stats` (gpu load), and each can be disabled by setting the corresponding variable to 0 (e.g., fps=0).

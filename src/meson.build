@@ -181,7 +181,7 @@ link_args = cc.get_supported_link_arguments(['-Wl,-Bsymbolic-functions', '-Wl,-z
 link_args += '-Wl,--version-script,@0@'.format(join_paths(meson.current_source_dir(), 'mangohud.version'))
 
 mangohud_static_lib = static_library(
-  'MangoHud',
+  'FHUD',
   mangohud_version,
   files('vulkan.cpp'),
   util_files,
@@ -219,7 +219,7 @@ mangohud_static_lib = static_library(
 )
 
 mangohud_shared_lib = shared_library(
-  'MangoHudfex',
+  'FHUD',
   objects: mangohud_static_lib.extract_all_objects(),
   link_with: mangohud_static_lib,
   link_args : link_args,
@@ -228,7 +228,7 @@ mangohud_shared_lib = shared_library(
 )
 
 mangohud_opengl_shared_lib = shared_library(
-  'MangoHud_opengl',
+  'FHUD_opengl',
   mangohud_version,
   opengl_files,
   vklayer_files,
@@ -310,7 +310,7 @@ mangoapp = executable(
 endif
 if is_unixy
   mangohud_shim = shared_library(
-    'MangoHud_shim',
+    'FHUD_shim',
     files(
       'gl/shim.c',
       'real_dlsym.c',
@@ -332,7 +332,7 @@ if is_unixy
 endif
 
 configure_file(input : 'mangohud.json.in',
-  output : 'MangoHudfex.@0@.json'.format(host_machine.cpu_family()),
+  output : 'FHUD.@0@.json'.format(host_machine.cpu_family()),
   configuration : conf_data,
   install : true,
   install_dir : join_paths(get_option('datadir'), 'vulkan', 'implicit_layer.d'),

@@ -61,7 +61,7 @@ static bool load_adjacent_opengl_lib(void)
 
     *slash = '\0';
 
-    if (asprintf(&lib, "%s/libMangoHud_opengl.so", location) < 0)
+    if (asprintf(&lib, "%s/libFHUD_opengl.so", location) < 0)
     {
         fprintf(stderr, "shim: asprintf: %s\n", strerror(errno));
         return false;
@@ -120,11 +120,11 @@ static void loadMangoHud() {
 
     if (!mangoHudLoaded)
     {
-        handle = dlopen("${ORIGIN}/libMangoHud_opengl.so", RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+        handle = dlopen("${ORIGIN}/libFHUD_opengl.so", RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (handle) mangoHudLoaded = true;
         else
         {
-            fprintf(stderr, "shim: Failed to load from ${ORIGIN}/libMangoHud_opengl.so: %s\n", dlerror());
+            fprintf(stderr, "shim: Failed to load from ${ORIGIN}/libFHUD_opengl.so: %s\n", dlerror());
             handle = RTLD_NEXT;
         }
     }
