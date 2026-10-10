@@ -937,16 +937,35 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.credit = real_params->custom_text_center;
 
          fusionhud::fr::Frame fframe;
-         fusionhud::fr::build(fframe,
-                              fusionhud::fr::make_snapshot(src),
-                              fusionhud::fr::read_chips<swapchain_stats>(*real_params),
-                              fusionhud::currentFusionSize(*real_params),
-                              fo);
+         const auto fs_snap = fusionhud::fr::make_snapshot(src);
+         const auto fs_chips = fusionhud::fr::read_chips<swapchain_stats>(*real_params);
+         const fusionhud::FusionSize fsz = fusionhud::currentFusionSize(*real_params);
+         fusionhud::fr::build(fframe, fs_snap, fs_chips, fsz, fo);
 
          // 窗口比面板大一圈留白：描边因此远离裁剪边界，四边都能完整绘出
-         const float fmg = fusionhud::fr::panel_margin(fframe, fo);
-         const ImVec2 fsize(std::max(fframe.content_w, 1.0f) + fmg * 2.0f,
-                            std::max(fframe.content_h, 1.0f) + fmg * 2.0f);
+         float fmg = fusionhud::fr::panel_margin(fframe, fo);
+         ImVec2 fsize(std::max(fframe.content_w, 1.0f) + fmg * 2.0f,
+                      std::max(fframe.content_h, 1.0f) + fmg * 2.0f);
+
+         // 面板放不下画面时，整体等比缩小后重排一次。
+         // 为什么需要：FHUD 画在“游戏画面”里，画面尺寸 = 游戏渲染分辨率，往往比手机屏幕小；
+         // 驱动/型号名一换行、面板变高就可能溢出画面，超出画面的部分会被裁掉，
+         // 看上去就是“上面一截被顶出去看不见”。缩小后保证整块面板都在画面内。
+         {
+            const ImVec2 disp = ImGui::GetIO().DisplaySize;
+            float fit = 1.0f;
+            if (disp.x > 8.0f && fsize.x > disp.x - 2.0f)
+               fit = std::max(fit, fsize.x / (disp.x - 2.0f));
+            if (disp.y > 8.0f && fsize.y > disp.y - 2.0f)
+               fit = std::max(fit, fsize.y / (disp.y - 2.0f));
+            if (fit > 1.0f) {
+               fo.scale = std::max(0.35f, fo.scale / fit);
+               fusionhud::fr::build(fframe, fs_snap, fs_chips, fsz, fo);
+               fmg = fusionhud::fr::panel_margin(fframe, fo);
+               fsize = ImVec2(std::max(fframe.content_w, 1.0f) + fmg * 2.0f,
+                              std::max(fframe.content_h, 1.0f) + fmg * 2.0f);
+            }
+         }
          // 用本帧真实尺寸重新定位/定尺寸（覆盖调用方那次按 params->width/height 的布局）
          position_layer(data, *real_params, fsize);
          // 兼容长内容：显卡/驱动名或数值很长时，面板可能比屏幕还宽 —— 按 position 摆好的
