@@ -339,6 +339,18 @@ inline void applyRandomColorsToParams(overlay_params *p)
     p->background_color = kColPanelRgb & 0x00FFFFFFu;
 }
 
+/** 面板背景不透明度：默认 0（全透明）。用 MANGOHUD_FUSION_BG_ALPHA 可调回 0~1 */
+inline float fusionBgAlpha()
+{
+    if (const char* e = std::getenv("MANGOHUD_FUSION_BG_ALPHA")) {
+        if (*e) {
+            const float v = static_cast<float>(std::atof(e));
+            return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+        }
+    }
+    return 0.0f;
+}
+
 /**
  * FusionHUD 主题 → MangoHud 配置键值表。
  * 交给 overlay_params.cpp 的 add_to_options() 走**正常解析路径**写入，
@@ -374,7 +386,9 @@ fusionThemeOptions(FusionSize size, float bg_opacity = kBgOpacityDefault,
 
     // ---- 面板：纯黑底（上游 Color.argb(bgOpacity*255, 0,0,0)）+ 圆角 8，无文字描边 ----
     o.emplace_back("background_color", kPanelHex);
-    o.emplace_back("background_alpha", std::to_string(bg_opacity));
+    // 默认全透明（详见 fusionBgAlpha()）；bg_opacity 参数保留仅为兼容旧调用
+    (void)bg_opacity;
+    o.emplace_back("background_alpha", std::to_string(fusionBgAlpha()));
     o.emplace_back("alpha", "1.0");
     o.emplace_back("round_corners", std::to_string((int)std::lround(kBgRadiusSp)));
     o.emplace_back("text_outline", "0");

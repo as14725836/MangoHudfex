@@ -1665,6 +1665,13 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     const uint32_t bg = (static_cast<uint32_t>(std::lround(bg_a * 255.0f)) << 24) |
                         kColPanelRgb;
 
+    // 背景开关：alpha≈0 视作「全透明」。此时把外投影 / 面板填充 / 内高光 /
+    // 磁贴底 / 图区底衬一起省掉，否则会留下一个看不见的"壳"。
+    const bool panel_fill = bg_a > 0.01f;
+    auto fade = [panel_fill](uint32_t c) -> uint32_t {
+        return panel_fill ? c : (c & 0x00FFFFFFu);   // 透明时把 alpha 归零
+    };
+
     // 圆角：Pill 用 height/2 的真圆（胶囊）；其余用按短边比例放大的 squircle
     float radius;
     float sq_n;
@@ -1678,6 +1685,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     }
 
     // 外投影：两层逐渐变淡的同形轮廓，让面板从画面上"浮"起来（Pill 也适用）
+    if (panel_fill)
     for (int i = 2; i >= 1; --i) {
         const float e = f.M.sp(1.4f) * static_cast<float>(i);
         std::vector<ImVec2> shp;
@@ -1688,10 +1696,11 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
 
     std::vector<ImVec2> path;
     squircle_path(path, x0, y0, x1, y1, radius, sq_n, kSquircleSeg);
-    dl->AddConvexPolyFilled(path.data(), static_cast<int>(path.size()), to_imcol(bg));
+    if (panel_fill)
+        dl->AddConvexPolyFilled(path.data(), static_cast<int>(path.size()), to_imcol(bg));
 
     // 内高光：贴着面板内沿 1px 的亮边（玻璃质感），与强调色描边相互独立
-    {
+    if (panel_fill) {
         const float hi = 1.0f;
         std::vector<ImVec2> hp;
         squircle_path(hp, x0 + hi, y0 + hi, x1 - hi, y1 - hi,
@@ -1714,7 +1723,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     }
 
     // 磁贴底：白 × clamp(14*bgOpacity, 8, 40)
-    if (!f.tiles.empty()) {
+    if (panel_fill && !f.tiles.empty()) {
         float a = 14.0f * bg_a;
         a = std::min(std::max(a, 8.0f), 40.0f);
         const uint32_t tc = (static_cast<uint32_t>(std::lround(a)) << 24) | 0x00FFFFFFu;
@@ -1766,12 +1775,12 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
             const ImVec2 g0(o.x + f.graph.x0, o.y + f.graph.y0);
             const ImVec2 g1(o.x + f.graph.x1, o.y + f.graph.y1);
             const float gr_r = f.M.sp(3.0f);
-            dl->AddRectFilled(g0, g1, to_imcol(0x14000000u | (kColGraph & 0x00FFFFFFu)), gr_r);
-            dl->AddRect(g0, g1, to_imcol(0x1EFFFFFFu), gr_r, 0, 1.0f);
+            dl->AddRectFilled(g0, g1, to_imcol(fade(0x14000000u | (kColGraph & 0x00FFFFFFu))), gr_r);
+            dl->AddRect(g0, g1, to_imcol(fade(0x1EFFFFFFu)), gr_r, 0, 1.0f);
             // 中位参考线：曲线到一半高度时有参照，读图更快
             const float gmid = (g0.y + g1.y) * 0.5f;
             dl->AddLine(ImVec2(g0.x + 1.0f, gmid), ImVec2(g1.x - 1.0f, gmid),
-                        to_imcol(0x14FFFFFFu), 1.0f);
+                        to_imcol(fade(0x14FFFFFFu)), 1.0f);
             // 外发光 + 实线：先粗描一层低透明度，再叠细实线
             dl->AddPolyline(pts.data(), static_cast<int>(pts.size()),
                             to_imcol(0x46000000u | (kColGraph & 0x00FFFFFFu)), false, f.M.sp(3.4f));
