@@ -323,18 +323,32 @@ parse_color(const char *str)
 static std::vector<unsigned>
 parse_load_color(const char *str)
 {
+   // 容错解析：配置里写 "AA,,BB"、非十六进制字符、超长列表都不能让进程崩。
+   // （旧实现直接 std::stoi(token, NULL, 16)，空 token / 非法字符会抛异常 → 闪退）
    std::vector<unsigned> load_colors;
    auto tokens = str_tokenize(str);
    std::string token;
 
    for (auto& token : tokens) {
       trim(token);
-      load_colors.push_back(std::stoi(token, NULL, 16));
+      if (token.empty())
+         continue;                                   // "AA,,BB" 里的空段
+      if (load_colors.size() >= 8)
+         break;                                      // 上限，防畸形配置把 vector 撑爆
+      if (token.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+         SPDLOG_ERROR("load colour: ignoring invalid token '{}'", token);
+         continue;
+      }
+      try {
+         load_colors.push_back(static_cast<unsigned>(std::stoul(token, NULL, 16)));
+      } catch (...) {
+         SPDLOG_ERROR("load colour: ignoring bad token '{}'", token);
+      }
    }
 
    // pad vec with white color so we always have at least 3
    while (load_colors.size() < 3) {
-      load_colors.push_back(std::stoi("FFFFFF" , NULL, 16));
+      load_colors.push_back(0xFFFFFFu);
    }
 
     return load_colors;
@@ -343,12 +357,29 @@ parse_load_color(const char *str)
 static std::vector<unsigned>
 parse_load_value(const char *str)
 {
+   // 容错解析（同 parse_load_color）：非数字 token 跳过，并补齐到 3 段，
+   // 以免后续按 load_value[0..2] 取用时越界。
    std::vector<unsigned> load_value;
    auto tokens = str_tokenize(str);
    std::string token;
    for (auto& token : tokens) {
       trim(token);
-      load_value.push_back(std::stoi(token));
+      if (token.empty())
+         continue;
+      if (load_value.size() >= 8)
+         break;
+      if (token.find_first_not_of("0123456789+-") != std::string::npos) {
+         SPDLOG_ERROR("load value: ignoring invalid token '{}'", token);
+         continue;
+      }
+      try {
+         load_value.push_back(static_cast<unsigned>(std::stol(token)));
+      } catch (...) {
+         SPDLOG_ERROR("load value: ignoring bad token '{}'", token);
+      }
+   }
+   while (load_value.size() < 3) {
+      load_value.push_back(0);
    }
     return load_value;
 }
@@ -1103,6 +1134,15 @@ parse_overlay_config(struct overlay_params *params,
 
    if (params->font_scale_media_player <= 0.f)
       params->font_scale_media_player = 0.55f;
+
+   // 兼容性：三段色/三段阈值必须是 >= 3 个元素 —— 下面直接取 &vec[0..2]，
+   // vector 短于 3 时是未定义行为（会闪退）。这里兜底补齐。
+   for (std::vector<unsigned> *v : {&params->gpu_load_color, &params->cpu_load_color,
+                                    &params->fps_color, &params->gpu_load_value,
+                                    &params->cpu_load_value, &params->fps_value}) {
+      while (v->size() < 3)
+         v->push_back(0xFFFFFFu);
+   }
 
    // Convert from 0xRRGGBB to ImGui's format
    std::array<unsigned *, 24> colors = {

@@ -1,6 +1,7 @@
 #include <spdlog/spdlog.h>
 #include <filesystem.h>
 #include "battery.h"
+#include "string_utils.h"
 
 namespace fs = ghc::filesystem;
 using namespace std;
@@ -56,11 +57,11 @@ float BatteryStats::getPercent()
             std::ifstream input(charge_now);
             std::string line;
             if(std::getline(input, line)) {
-                charge_n += (stof(line) / 1000000);
+                charge_n += (safe_stof(line) / 1000000);
             }
             std::ifstream input2(charge_full);
             if(std::getline(input2, line)) {
-                charge_f += (stof(line) / 1000000);
+                charge_f += (safe_stof(line) / 1000000);
             }
         }
 
@@ -68,11 +69,11 @@ float BatteryStats::getPercent()
             std::ifstream input(energy_now);
             std::string line;
             if(std::getline(input, line)) {
-                charge_n += (stof(line) / 1000000);
+                charge_n += (safe_stof(line) / 1000000);
             }
             std::ifstream input2(energy_full);
             if(std::getline(input2, line)) {
-                charge_f += (stof(line) / 1000000);
+                charge_f += (safe_stof(line) / 1000000);
             }
         }
 
@@ -82,7 +83,7 @@ float BatteryStats::getPercent()
             std::ifstream input(capacity);
             std::string line;
             if(std::getline(input, line)) {
-                charge_n += stof(line) / 100;
+                charge_n += safe_stof(line) / 100;
                 charge_f = batt_count;
             }
         }
@@ -127,14 +128,14 @@ float BatteryStats::getPower() {
                 std::ifstream input(current_now);
                 std::string line;
                 if (std::getline(input, line)) {
-                    i_raw = std::fabs(stof(line));
+                    i_raw = std::fabs(safe_stof(line));
                 }
             }
             {
                 std::ifstream input(voltage_now);
                 std::string line;
                 if (std::getline(input, line)) {
-                    v_raw = std::fabs(stof(line));
+                    v_raw = std::fabs(safe_stof(line));
                 }
             }
 
@@ -148,7 +149,7 @@ float BatteryStats::getPower() {
             std::ifstream input(power_now);
             std::string line;
             if (std::getline(input, line)) {
-                watt = std::fabs(stof(line)) / 1000000.0f;
+                watt = std::fabs(safe_stof(line)) / 1000000.0f;
             }
         }
 
@@ -175,7 +176,7 @@ float BatteryStats::getTimeRemaining() {
             std::ifstream input(current_now);
             std::string line;
             if (std::getline(input, line)) {
-                current_now_vec.push_back(std::fabs(stof(line)));
+                current_now_vec.push_back(std::fabs(safe_stof(line)));
             }
         } else if (fs::exists(power_now) && fs::exists(voltage_now)) {
             float voltage = 0.0f;
@@ -185,14 +186,14 @@ float BatteryStats::getTimeRemaining() {
                 std::ifstream input_voltage(voltage_now);
                 std::string line;
                 if (std::getline(input_voltage, line)) {
-                    voltage = stof(line);
+                    voltage = safe_stof(line);
                 }
             }
             {
                 std::ifstream input_power(power_now);
                 std::string line;
                 if (std::getline(input_power, line)) {
-                    power = stof(line);
+                    power = safe_stof(line);
                 }
             }
 
@@ -206,7 +207,7 @@ float BatteryStats::getTimeRemaining() {
             std::ifstream input(charge_now);
             std::string line;
             if (std::getline(input, line)) {
-                charge += stof(line);
+                charge += safe_stof(line);
             }
         } else if (fs::exists(energy_now) && fs::exists(voltage_now)) {
             float energy = 0.0f;
@@ -216,14 +217,14 @@ float BatteryStats::getTimeRemaining() {
                 std::ifstream input_energy(energy_now);
                 std::string line;
                 if (std::getline(input_energy, line)) {
-                    energy = stof(line);
+                    energy = safe_stof(line);
                 }
             }
             {
                 std::ifstream input_voltage(voltage_now);
                 std::string line;
                 if (std::getline(input_voltage, line)) {
-                    voltage = stof(line);
+                    voltage = safe_stof(line);
                 }
             }
 

@@ -1,4 +1,5 @@
 #include "device.h"
+#include "string_utils.h"
 #include <filesystem.h>
 #include <iostream>
 #include <algorithm>
@@ -197,7 +198,7 @@ void device_info () {
             if (std::getline(input_capacity, line)) {
                 device_data[device_count].battery_percent = line;
                 device_data[device_count].report_percent = true;
-                switch(std::stoi(line)) {
+                switch(safe_stoi(line)) {
                     case 0 ... 25:
                         device_data[device_count].battery = "Low";
                         break;

@@ -372,7 +372,8 @@ static void device_map_queues(struct device_data *data,
                                      pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex,
                                      j, &queue);
 
-         VK_CHECK(data->set_device_loader_data(data->device, queue));
+         if (data->set_device_loader_data)
+            VK_CHECK(data->set_device_loader_data(data->device, queue));
 
          data->queues[queue_index++] =
             new_queue_data(queue, &family_props[pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex],
@@ -462,8 +463,9 @@ static struct overlay_draw *get_overlay_draw(struct swapchain_data *data, unsign
    VK_CHECK(device_data->vtable.AllocateCommandBuffers(device_data->device,
                                                        &cmd_buffer_info,
                                                        &draw->command_buffer));
-   VK_CHECK(device_data->set_device_loader_data(device_data->device,
-                                                draw->command_buffer));
+   if (device_data->set_device_loader_data)
+      VK_CHECK(device_data->set_device_loader_data(device_data->device,
+                                                   draw->command_buffer));
 
 
    VkFenceCreateInfo fence_info = {};
@@ -1938,7 +1940,12 @@ static VkResult overlay_CreateDevice(
 
    VkLayerDeviceCreateInfo *load_data_info =
       get_device_chain_info(pCreateInfo, VK_LOADER_DATA_CALLBACK);
-   device_data->set_device_loader_data = load_data_info->u.pfnSetDeviceLoaderData;
+   // 兼容性：部分加载器/驱动组合（某些 Mesa / Android Vulkan 实现）不提供
+   // VK_LOADER_DATA_CALLBACK，load_data_info 会是空 —— 旧代码直接解引用即空指针
+   // 闪退（而且后面 queue / 命令缓冲绑定会调用这个函数指针）。允许为空，
+   // 并在调用点跳过（见下面两处 if）。
+   device_data->set_device_loader_data =
+      load_data_info ? load_data_info->u.pfnSetDeviceLoaderData : nullptr;
 
    driverProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
    driverProps.pNext = nullptr;

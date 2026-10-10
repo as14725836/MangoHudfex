@@ -1,4 +1,5 @@
 #include "gpu_fdinfo.h"
+#include "string_utils.h"
 
 #ifndef TEST_ONLY
 #include "hud_elements.h"
@@ -764,7 +765,7 @@ int GPU_fdinfo::get_kgsl_load() {
 
         if (!usage_str.empty()) {
             try {
-                return std::stoi(usage_str);
+                return safe_stoi(usage_str);
             } catch (...) {
                 // 解析失败，继续尝试其他方法
             }
@@ -806,7 +807,7 @@ int GPU_fdinfo::get_kgsl_temp() {
 
         if (!temp_str.empty()) {
             try {
-                return std::round(std::stoi(temp_str) / 1'000.f);
+                return std::round(safe_stoi(temp_str) / 1'000.f);
             } catch (...) {
                 // 解析失败，继续尝试其他方法
             }
@@ -836,7 +837,7 @@ int GPU_fdinfo::get_kgsl_temp() {
                     if (type.find("gpuss") != std::string::npos) {
                         // 提取 thermal zone 编号
                         try {
-                            cached_gpu_thermal_zone = std::stoi(filename.substr(12));
+                            cached_gpu_thermal_zone = safe_stoi(filename.substr(12));
                             SPDLOG_DEBUG("Found GPU thermal zone: {} with type: {}", filename, type);
                             break;
                         } catch (...) {

@@ -167,4 +167,19 @@ static void trim_char(char* str) {
 
 #pragma GCC diagnostic pop
 
+// ---- 兼容性：不抛异常的数值解析 ----
+// 解析配置串 / sysfs 内容时，std::stoi/stof 遇到非数字会抛 std::invalid_argument，
+// 没人接就直接 std::terminate（闪退）。不同机型/驱动的节点内容不一样，
+// 所以症状是"某些设备/驱动才有问题"。这里统一成失败回退默认值。
+inline int safe_stoi(const std::string &s, int fallback = 0) {
+    try { return std::stoi(s); } catch (...) { return fallback; }
+}
+inline long long safe_stoll(const std::string &s, long long fallback = 0) {
+    try { return std::stoll(s); } catch (...) { return fallback; }
+}
+inline float safe_stof(const std::string &s, float fallback = 0.0f) {
+    try { return std::stof(s); } catch (...) { return fallback; }
+}
+
+
 #endif //MANGOHUD_STRING_UTILS_H
