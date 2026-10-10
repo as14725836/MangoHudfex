@@ -157,6 +157,10 @@ static std::string fusion_font_path(const overlay_params& params) {
 
    // 随包中文子集：固定位置先试一遍（不依赖 fontconfig / 安装前缀）
    static const char* kCjkFirst[] = {
+      // 用户自放的字体优先于随包中文子集：子集只收了常用字（例如“运”不在里面，
+      // 会渲染成 ?）。把整字库字体放到下面任一文件名即可全局覆盖。
+      "/data/data/com.termux/files/usr/glibc/share/fonts/FusionFont.ttf",
+      "/data/data/com.termux/files/usr/glibc/share/fonts/浪漫雅圆.ttf",
       "/data/data/com.termux/files/usr/glibc/share/fonts/MangoHud-CJK.ttf",
       "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/MangoHud-CJK.ttf",
       "/data/data/com.termux/files/usr/share/fonts/MangoHud-CJK.ttf",
