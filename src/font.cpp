@@ -96,8 +96,9 @@ static std::string first_usable_font(const std::string& dir) {
          c = (char)tolower((unsigned char)c);
       const bool is_ttf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".ttf") == 0;
    const bool is_otf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".otf") == 0;
-   if (!is_ttf && !is_otf)
+   if (!is_ttf && !is_otf) {
       continue;
+   }
 
       const std::string path = dir + "/" + name;
       if (!is_loadable_ttf(path))
@@ -166,8 +167,9 @@ static std::string first_user_font(const std::string& dir) {
          c = (char)tolower((unsigned char)c);
       const bool is_ttf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".ttf") == 0;
    const bool is_otf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".otf") == 0;
-   if (!is_ttf && !is_otf)
+   if (!is_ttf && !is_otf) {
       continue;
+   }
       const std::string path = dir + "/" + name;
       if (is_loadable_ttf(path)) {
          hit = path;
