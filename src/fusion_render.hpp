@@ -802,7 +802,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     // DISP 行：当前显示会话（X11 / Wayland / XWayland / Android / Unknown）。
     // 型号行稍后会插到 rows 最前面，所以这一行最终落在“型号名正下方”。
     if (!f.disp_text.empty())
-        add("DISP", kColAccent, std::vector<Span>{Span{f.disp_text, kColValue, row_px}});
+        add("DISP", kColAccent, std::vector<Span>{Span{f.disp_text, kColInfo, row_px}});
     // 型号先不落行：等其它行算完"自然宽度"后再定换行点（两遍布局）
     const std::string model_txt =
         (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
@@ -903,7 +903,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     // $PREFIX/glibc/opt/conf/wine_path.conf → WINE_PATH → lib/wine/{aarch64,x86_64}-windows
     if (!f.run_mode_text.empty())
         add(hud_i18n::tr("Run Mode"), kColAccent,
-            std::vector<Span>{Span{f.run_mode_text, kColValue, row_px}});
+            std::vector<Span>{Span{f.run_mode_text, kColInfo, row_px}});
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
