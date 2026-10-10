@@ -910,9 +910,13 @@ static std::string fusion_wine_run_mode_text()
 /**
  * Wine 打开的程序名（FHUD 最下面一行，如 game.exe）。
  *
- * 探测顺序：环境变量 MANGOHUD_FUSION_PROG → 本进程 cmdline → 向上最多 8 层父进程；
- * 从参数里找第一个 *.exe（大小写不敏感），取文件名（去掉 wine 路径前缀）。
- * 探测不到返回空（整行隐藏）。
+ * 探测顺序（自动，无需配置）：
+ *   1) 环境变量 MANGOHUD_FUSION_PROG（用户强制指定）；
+ *   2) 本进程 comm（wine 会把 exe 名写进进程名）；
+ *   3) 本进程 cmdline 里的 *.exe 参数；
+ *   4) 本进程 comm 兜底（长名被截断、没有 .exe 时，排除运行时类名字）；
+ *   5) 向上最多 8 层父进程：comm 含 .exe → cmdline 含 .exe。
+ * 命中后取文件名（去掉 wine 路径前缀）；探测不到返回空（整行隐藏）。
  */
 #ifdef __linux__
 static bool fusion_read_cmdline(int pid, std::vector<std::string>& out)
@@ -963,10 +967,43 @@ static std::string fusion_exe_base(const std::string& a)
       p = q;
    return (p == std::string::npos) ? a : a.substr(p + 1);
 }
-static std::string fusion_exe_from_args(const std::vector<std::string>& args)
+/** 已知的 wine 系统进程（避免把 services.exe 之类当成“程序”） */
+static bool fusion_sys_exe(const std::string& b)
 {
+   static const char* kBad[] = { "services.exe", "winedevice.exe", "plugplay.exe",
+                                 "explorer.exe", "wineboot.exe", "rundll32.exe",
+                                 "svchost.exe", "conhost.exe", "start.exe" };
+   std::string l = b;
+   for (char& c : l)
+      c = (char)std::tolower((unsigned char)c);
+   for (const char* x : kBad)
+      if (l == x)
+         return true;
+   return false;
+}
+/** 读 /proc/<pid>/comm（wine 下通常就是 exe 名） */
+static std::string fusion_read_comm(int pid)
+{
+   char path[64];
+   std::snprintf(path, sizeof(path), "/proc/%d/comm", pid);
+   FILE* f = std::fopen(path, "r");
+   if (!f)
+      return std::string();
+   char buf[128];
+   std::string out;
+   if (std::fgets(buf, sizeof(buf), f))
+      out = buf;
+   std::fclose(f);
+   while (!out.empty() && (out.back() == (char)10 || out.back() == (char)13))
+      out.pop_back();
+   return out;
+}
+/** 从参数里挑程序名：优先非 windows 目录、非系统 exe；否则用第一个 .exe */
+static std::string fusion_pick_exe(const std::vector<std::string>& args)
+{
+   std::string first;
    for (const std::string& a : args) {
-      if (a.size() < 4)
+      if (a.size() < 5)
          continue;
       std::string tail = a.substr(a.size() - 4);
       for (char& c : tail)
@@ -974,10 +1011,36 @@ static std::string fusion_exe_from_args(const std::vector<std::string>& args)
       if (tail != ".exe")
          continue;
       std::string b = fusion_exe_base(a);
-      if (!b.empty())
-         return b;
+      if (b.empty())
+         continue;
+      if (first.empty())
+         first = b;
+      std::string l = a;
+      for (char& c : l)
+         c = (char)std::tolower((unsigned char)c);
+      if (l.find("windows") != std::string::npos)
+         continue;
+      if (fusion_sys_exe(b))
+         continue;
+      return b;
    }
-   return std::string();
+   return first;
+}
+/** 进程名兜底过滤：排除运行时/解释器类名字（wine、FEX、box64…） */
+static bool fusion_comm_is_self_ok(const std::string& c)
+{
+   if (c.empty())
+      return false;
+   std::string l = c;
+   for (char& ch : l)
+      ch = (char)std::tolower((unsigned char)ch);
+   if (l == "sh" || l == "bash" || l == "dash" || l == "busybox")
+      return false;
+   static const char* kRT[] = { "wine", "fex", "box64", "box86", "steam", "python", "proot" };
+   for (const char* x : kRT)
+      if (l.rfind(x, 0) == 0)
+         return false;
+   return true;
 }
 #endif
 static std::string fusion_wine_program_text()
@@ -987,22 +1050,54 @@ static std::string fusion_wine_program_text()
       if (const char* e = std::getenv("MANGOHUD_FUSION_PROG"))
          if (*e)
             return std::string(e);
-      int pid = (int)getpid();
-      for (int depth = 0; depth < 8; ++depth) {
+      const int self = (int)getpid();
+      const std::string c0 = fusion_read_comm(self);
+      {
+         std::string l = c0;
+         for (char& c : l)
+            c = (char)std::tolower((unsigned char)c);
+         if (l.find(".exe") != std::string::npos && !fusion_sys_exe(c0))
+            return c0;
+      }
+      {
          std::vector<std::string> args;
-         if (fusion_read_cmdline(pid, args)) {
-            std::string r = fusion_exe_from_args(args);
+         if (fusion_read_cmdline(self, args)) {
+            std::string r = fusion_pick_exe(args);
             if (!r.empty())
                return r;
          }
-         int pp = fusion_read_ppid(pid);
+      }
+      if (fusion_comm_is_self_ok(c0))
+         return c0;
+      int pid = self;
+      for (int depth = 0; depth < 8; ++depth) {
+         const int pp = fusion_read_ppid(pid);
          if (pp <= 1 || pp == pid)
             break;
+         const std::string cc = fusion_read_comm(pp);
+         {
+            std::string l = cc;
+            for (char& c : l)
+               c = (char)std::tolower((unsigned char)c);
+            if (l.find(".exe") != std::string::npos && !fusion_sys_exe(cc))
+               return cc;
+         }
+         std::vector<std::string> args;
+         if (fusion_read_cmdline(pp, args)) {
+            std::string r = fusion_pick_exe(args);
+            if (!r.empty())
+               return r;
+         }
          pid = pp;
       }
 #endif
       return std::string();
    }();
+   static bool logged = false;
+   if (!logged) {
+      logged = true;
+      SPDLOG_INFO("fusion program name: '{}'", cached);
+   }
    return cached;
 }
 
