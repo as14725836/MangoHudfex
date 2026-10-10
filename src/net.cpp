@@ -1,5 +1,4 @@
 #include "net.h"
-#include "string_utils.h"
 #include "hud_elements.h"
 
 Net::Net() {
@@ -36,7 +35,7 @@ long long safe_stoll(const std::string& str, long long default_value = 0) {
     }
 
     try {
-        return safe_stoll(str);
+        return std::stoll(str);
     } catch (const std::invalid_argument& e) {
         SPDLOG_DEBUG("stoll invalid argument");
     } catch (const std::out_of_range& e) {

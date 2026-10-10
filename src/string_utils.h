@@ -174,9 +174,6 @@ static void trim_char(char* str) {
 inline int safe_stoi(const std::string &s, int fallback = 0) {
     try { return std::stoi(s); } catch (...) { return fallback; }
 }
-inline long long safe_stoll(const std::string &s, long long fallback = 0) {
-    try { return std::stoll(s); } catch (...) { return fallback; }
-}
 inline float safe_stof(const std::string &s, float fallback = 0.0f) {
     try { return std::stof(s); } catch (...) { return fallback; }
 }
