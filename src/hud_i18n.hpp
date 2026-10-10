@@ -22,7 +22,7 @@ namespace hud_i18n {
 inline const char* zh_glyph_text() {
     return
         "显卡处理器内存电池帧率时间平均温度风扇功耗延迟分辨率类型刷新程序名长剩余降频未知开关全屏垂直同步游戏模式呈现锐利图表应用核心读写帧数接口引擎同步方式"
-        "占用无连接网络显存时钟上限当前扇转速续航";
+        "占用无连接网络显存时钟上限当前扇转速续航运行";
 }
 
 inline bool chinese_enabled() {
@@ -47,6 +47,7 @@ inline const std::unordered_map<std::string, const char*>& table() {
         {"FPS", "帧率"},
         {"Frametime", "帧时间"},
         {"AVG", "平均"},
+        {"Run Mode", "运行模式"},
         {"Frame Count", "帧数"},
         {"GPU Load", "显卡占用"},
         {"GPU Temp", "显卡温度"},

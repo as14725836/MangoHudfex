@@ -842,6 +842,71 @@ static bool x11_abstract_display_available()
 #endif
 
 /**
+ * 运行模式：FEX-aarch64-wow64 / BOX64-x86_64-wow64（FHUD 最下面一行）。
+ *
+ * 数据源：$PREFIX/glibc/opt/conf/wine_path.conf 里的 `export WINE_PATH=…`
+ * （wine 目录名带版本号、不固定，所以必须动态读）；拿到后在 $WINE_PATH/lib/wine/ 里看：
+ *   aarch64-windows → FEX-aarch64-wow64
+ *   x86_64-windows  → BOX64-x86_64-wow64
+ * 只算一次并缓存（不能每帧读文件）。
+ */
+static std::string fusion_wine_run_mode_text()
+{
+   static const std::string cached = []() -> std::string {
+      const char* pfx_env = std::getenv("PREFIX");
+      const std::string pfx = (pfx_env && *pfx_env) ? pfx_env : "/data/data/com.termux/files/usr";
+
+      std::string wine_path;
+      const char* env_wp = std::getenv("WINE_PATH");
+      if (env_wp && *env_wp)
+         wine_path = env_wp;
+
+      if (wine_path.empty()) {
+         const std::string conf = pfx + "/glibc/opt/conf/wine_path.conf";
+         if (FILE* f = std::fopen(conf.c_str(), "r")) {
+            char buf[1024];
+            while (std::fgets(buf, sizeof(buf), f)) {
+               const std::string line(buf);
+               const size_t at = line.find("WINE_PATH=");
+               if (at == std::string::npos)
+                  continue;
+               std::string v = line.substr(at + 10);
+               while (!v.empty() && (v.back() == ' ' || v.back() == '\r' || v.back() == '\n' ||
+                                     v.back() == '"' || v.back() == '\'' || v.back() == ';'))
+                  v.pop_back();
+               size_t i = 0;
+               while (i < v.size() && (v[i] == ' ' || v[i] == '"' || v[i] == '\''))
+                  ++i;
+               v.erase(0, i);
+               wine_path = v;
+               break;
+            }
+            std::fclose(f);
+         }
+      }
+
+      if (wine_path.empty())
+         return std::string();
+
+      // 展开 $PREFIX / ${PREFIX}（conf 里写的是相对 Termux 前缀的形式）
+      const std::string pats[2] = { "${PREFIX}", "$PREFIX" };
+      for (const std::string& pat : pats) {
+         size_t at;
+         while ((at = wine_path.find(pat)) != std::string::npos)
+            wine_path = wine_path.substr(0, at) + pfx + wine_path.substr(at + pat.size());
+      }
+
+      const std::string wdir = wine_path + "/lib/wine/";
+      if (dir_exists(wdir + "aarch64-windows"))
+         return "FEX-aarch64-wow64";
+      if (dir_exists(wdir + "x86_64-windows"))
+         return "BOX64-x86_64-wow64";
+      return std::string();
+   }();
+   return cached;
+}
+
+/**
  * 当前显示会话（给 FHUD 的 DISP 行用）。
  *
  * 口径优先“实际创建 surface 时记下的类型”（vulkan 的 wayland hook、x11 连接探测），
@@ -1010,6 +1075,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          // 面板描边强度：fusion_outline（默认 1.0 → 约 3.5px），0 = 不描边。
          fo.outline = real_params->fusion_outline > 0.0f ? real_params->fusion_outline : 0.0f;
          fo.disp_text = fusion_display_server_text();
+         fo.run_mode_text = fusion_wine_run_mode_text();
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 

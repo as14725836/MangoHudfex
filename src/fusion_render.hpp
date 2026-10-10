@@ -599,6 +599,7 @@ struct Frame {
     float content_h = 0.0f;
     std::string credit;   // 画面署名（自绘模式下由本渲染器负责显示）
     std::string disp_text;   // DISP 行：当前显示会话（X11 / Wayland / …）
+    std::string run_mode_text;   // 运行模式行（最下面）：FEX-aarch64-wow64 / BOX64-x86_64-wow64
     /** 最后一段文字的基线 + 最后一次 place() 的右端：给底部时钟对齐用 */
     float last_baseline = -1.0f;
     float last_call_right = 0.0f;
@@ -888,11 +889,18 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         add(api_label(s, c).c_str(), kColFps, std::move(v));
 
         add(hud_i18n::tr("AVG"), kColLo, num_unit_f(s.fps_avg, "FPS", row_px, unit_px));
-        add("1%", kColLo, num_unit_f(s.low1, "FPS", row_px, unit_px));
-        add("0.1%", kColLo, num_unit_f(s.low01, "FPS", row_px, unit_px));
-        if (c.low001)
-            add("0.01%", kColLo, num_unit_f(s.low001, "FPS", row_px, unit_px));
+        // 1% / 0.1% / 0.01% 三行按需求移除（要恢复就把下面四行放开）
+        // add("1%", kColLo, num_unit_f(s.low1, "FPS", row_px, unit_px));
+        // add("0.1%", kColLo, num_unit_f(s.low01, "FPS", row_px, unit_px));
+        // if (c.low001)
+        //     add("0.01%", kColLo, num_unit_f(s.low001, "FPS", row_px, unit_px));
     }
+
+    // 运行模式：放在最下面一行（型号行稍后会插到最前面）。溯源：
+    // $PREFIX/glibc/opt/conf/wine_path.conf → WINE_PATH → lib/wine/{aarch64,x86_64}-windows
+    if (!f.run_mode_text.empty())
+        add(hud_i18n::tr("Run Mode"), kColAccent,
+            std::vector<Span>{Span{f.run_mode_text, kColValue, row_px}});
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
@@ -1615,6 +1623,9 @@ struct Options {
     /** DISP 行：当前显示会话（X11 / Wayland / XWayland / Android）。
      *  由 overlay.cpp 在构建前填充（surface 类型 + 环境变量回退）。 */
     std::string disp_text;
+    /** 运行模式行（最下面一项）：FEX-aarch64-wow64 / BOX64-x86_64-wow64。
+     *  由 overlay.cpp 读 $PREFIX/glibc/opt/conf/wine_path.conf 后填充。 */
+    std::string run_mode_text;
 };
 
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
@@ -1632,6 +1643,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     // GPL-3.0 §7(b) 的署名仍保留在 ATTRIBUTION.md / README 与 mangohud --credits。
     f.credit = o.credit;
     f.disp_text = o.disp_text;
+    f.run_mode_text = o.run_mode_text;
 
     switch (size) {
         case FusionSize::FULL:    build_full(f, s, c); break;
