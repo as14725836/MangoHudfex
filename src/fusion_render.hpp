@@ -1809,7 +1809,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
         // 发光（深色发亮）：同一字形先用本色提亮的半透明拷贝往外铺两圈，
         // 再把本色盖上去 —— 看起来就是字在发光的“灯管”效果。
         if (fusion_glow_enabled()) {
-            const ImFont* gf = f.M.pick(g.px);
+            ImFont* gf = f.M.pick(g.px);
             const char* gs = g.text.c_str();
             const char* ge = gs + g.text.size();
             const float r1 = std::max(1.0f, std::floor(g.px * 0.05f));
