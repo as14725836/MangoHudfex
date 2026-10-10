@@ -958,6 +958,13 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
                data.main_window_pos.x = 0.0f;
             if (data.main_window_pos.x + fsize.x > disp_w)
                data.main_window_pos.x = std::max(0.0f, disp_w - fsize.x);
+            // 纵向同理：内容增高（例如名字换行多出一行）时，底部锚定的面板会被顶出屏幕，
+            // 表现就是“上面一截看不见”。这里一并夹回屏幕内。
+            const float disp_h = ImGui::GetIO().DisplaySize.y;
+            if (data.main_window_pos.y < 0.0f)
+               data.main_window_pos.y = 0.0f;
+            if (data.main_window_pos.y + fsize.y > disp_h)
+               data.main_window_pos.y = std::max(0.0f, disp_h - fsize.y);
             ImGui::SetNextWindowPos(data.main_window_pos, ImGuiCond_Always);
          }
          ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
