@@ -949,6 +949,17 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
                             std::max(fframe.content_h, 1.0f) + fmg * 2.0f);
          // 用本帧真实尺寸重新定位/定尺寸（覆盖调用方那次按 params->width/height 的布局）
          position_layer(data, *real_params, fsize);
+         // 兼容长内容：显卡/驱动名或数值很长时，面板可能比屏幕还宽 —— 按 position 摆好的
+         // 窗口会有一部分跑到屏幕外，看起来就是“被隐藏了一截”。这里夹回屏幕内：
+         // 能放下就整体内移；实在放不下就贴左缘（保证从头可见）。
+         {
+            const float disp_w = ImGui::GetIO().DisplaySize.x;
+            if (data.main_window_pos.x < 0.0f)
+               data.main_window_pos.x = 0.0f;
+            if (data.main_window_pos.x + fsize.x > disp_w)
+               data.main_window_pos.x = std::max(0.0f, disp_w - fsize.x);
+            ImGui::SetNextWindowPos(data.main_window_pos, ImGuiCond_Always);
+         }
          ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
          ImGui::Begin("Main", &gui_open,
                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
