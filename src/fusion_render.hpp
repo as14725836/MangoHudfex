@@ -292,15 +292,28 @@ inline std::vector<std::string> wrap_text(const Metrics& m, const std::string& t
             out.push_back(cur);
             cur.clear();
         }
-        // 单个词过长：按字符硬断
+        // 单个词过长：硬断
+        // 注意必须按 UTF-8 **码点**步进：按字节切会把多字节字符截成非法序列，
+        // ImGui 对非法序列量宽会偏小 → 行实际超宽、画出面板后被窗口裁掉，
+        // 表现就是"名字太长时后面少了一截"。多字节字符也不该在中间断开。
         if (cur.empty() && m.measure(word, px) > max_w) {
             std::string piece;
-            for (char ch : word) {
-                if (!piece.empty() && m.measure(piece + ch, px) > max_w) {
+            size_t k = 0;
+            while (k < word.size()) {
+                const unsigned char c0 = static_cast<unsigned char>(word[k]);
+                size_t step = 1;
+                if (c0 >= 0xF0)      step = 4;
+                else if (c0 >= 0xE0) step = 3;
+                else if (c0 >= 0xC0) step = 2;
+                if (k + step > word.size())
+                    step = 1;                    // 尾部残缺字节，单字节处理就好
+                const std::string unit = word.substr(k, step);
+                if (!piece.empty() && m.measure(piece + unit, px) > max_w) {
                     out.push_back(piece);
                     piece.clear();
                 }
-                piece += ch;
+                piece += unit;
+                k += step;
             }
             cur = piece;
             i = j;

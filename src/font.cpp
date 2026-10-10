@@ -342,7 +342,18 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       static const ImWchar fusion_base[] = {
          0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
          0x2013, 0x2014,   // – —
+         0x2018, 0x201F,   // ‘ ’ “ ”
+         0x2022, 0x2022,   // •
+         0x2026, 0x2026,   // …
+         0x2030, 0x2030,   // ‰
+         0x20AC, 0x20AC,   // €
+         0x2103, 0x2103,   // ℃
+         0x2109, 0x2109,   // ℉
+         0x2116, 0x2116,   // №
+         0x2122, 0x2122,   // ™（显卡名/驱动名里常见）
          0x2190, 0x2193,   // ← ↑ → ↓
+         0x221E, 0x221E,   // ∞
+         0x2264, 0x2265,   // ≤ ≥
          0,
       };
       ImFontGlyphRangesBuilder fusion_builder;
