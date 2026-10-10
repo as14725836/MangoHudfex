@@ -626,7 +626,7 @@ struct Frame {
 inline void add_subtle_clock(Frame& f, bool enabled, float pad, float center_x = -1.0f) {
     if (!enabled)
         return;
-    const float px = f.M.sp(9.5f);
+    const float px = f.M.sp(10.5f);
     char buf[32];
     const std::time_t t = std::time(nullptr);
     std::tm tmv{};
@@ -778,11 +778,13 @@ inline void layout_column(Frame& f, const std::vector<Row>& rows, float x, float
 }
 
 inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
-    const float row_px = f.M.sp(12.0f);
-    const float unit_px = row_px * 0.62f;
-    const float pad = f.M.gsp(10.0f);
-    const float line_gap = f.M.gsp(4.0f);
-    const float lv_gap = f.M.gsp(8.0f);
+    // 字号：12 → 13.5sp（+12.5%），同时把行距/内边距收紧，让面板高度基本不变 ——
+    // 字变大而面板不膨胀（游戏分辨率小，面板再高会被自动适配缩回去）。
+    const float row_px = f.M.sp(13.5f);
+    const float unit_px = row_px * 0.63f;
+    const float pad = f.M.gsp(8.0f);
+    const float line_gap = f.M.gsp(2.5f);
+    const float lv_gap = f.M.gsp(6.0f);
 
     std::vector<Row> rows;
     auto add = [&](const char* label, uint32_t lcol, std::vector<Span> vals) {
@@ -1760,9 +1762,9 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
             continue;
         // 先画一层深色投影（偏移随字号等比）：白字更"实"，
         // 面板是半透明的，亮场景下也能压得住、不会显得发浅。
-        const float sh = std::max(1.0f, std::floor(g.px * 0.05f));
+        const float sh = std::max(1.0f, std::floor(g.px * 0.055f));
         dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x + sh, o.y + g.top + sh),
-                    to_imcol(0xA0000000u), g.text.c_str(), g.text.c_str() + g.text.size());
+                    to_imcol(0xC6000000u), g.text.c_str(), g.text.c_str() + g.text.size());
         dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
                     g.text.c_str(), g.text.c_str() + g.text.size());
     }

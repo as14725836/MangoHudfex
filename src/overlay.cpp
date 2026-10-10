@@ -953,10 +953,13 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          // 看上去就是“上面一截被顶出去看不见”。缩小后保证整块面板都在画面内。
          {
             const ImVec2 disp = ImGui::GetIO().DisplaySize;
+            // MANGOHUD_FUSION_AUTOFIT=0 可关掉自动缩小：面板超出画面就让它裁，字不变小
+            const char* autofit_env = std::getenv("MANGOHUD_FUSION_AUTOFIT");
+            const bool autofit_on = !(autofit_env && autofit_env[0] == '0');
             float fit = 1.0f;
-            if (disp.x > 8.0f && fsize.x > disp.x - 2.0f)
+            if (autofit_on && disp.x > 8.0f && fsize.x > disp.x - 2.0f)
                fit = std::max(fit, fsize.x / (disp.x - 2.0f));
-            if (disp.y > 8.0f && fsize.y > disp.y - 2.0f)
+            if (autofit_on && disp.y > 8.0f && fsize.y > disp.y - 2.0f)
                fit = std::max(fit, fsize.y / (disp.y - 2.0f));
             if (fit > 1.0f) {
                fo.scale = std::max(0.35f, fo.scale / fit);
