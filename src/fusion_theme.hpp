@@ -411,12 +411,16 @@ inline bool isFusionActive(const overlay_params& p) {
            p.enabled[OVERLAY_PARAM_ENABLED_fusion_mega];
 }
 
-/** 当前档位（多个同时置位时按 FusionSize 顺序取第一个） */
+/**
+ * 当前档位 —— 现在**恒定返回 FULL**。
+ *
+ * FusionHUD 只保留一种面板（即 preset 10 的 Full 布局）。保留这个函数是为了
+ * 兼容旧的 fusion_tiles / fusion_pill / ... 配置：即使有人手写这些开关，
+ * 渲染出来的仍然是同一套布局，不会出现"另一套面板没人维护"的情况。
+ * 想恢复多布局：把下面改成按 enabled[] 判断即可（原实现见 git 历史）。
+ */
 inline FusionSize currentFusionSize(const overlay_params& p) {
-    if (p.enabled[OVERLAY_PARAM_ENABLED_fusion_tiles])   return FusionSize::TILES;
-    if (p.enabled[OVERLAY_PARAM_ENABLED_fusion_pill])    return FusionSize::PILL;
-    if (p.enabled[OVERLAY_PARAM_ENABLED_fusion_minimal]) return FusionSize::MINIMAL;
-    if (p.enabled[OVERLAY_PARAM_ENABLED_fusion_mega])    return FusionSize::MEGA;
+    (void)p;
     return FusionSize::FULL;
 }
 

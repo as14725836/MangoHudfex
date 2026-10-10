@@ -1450,8 +1450,15 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
 
             break;
 
-      // === FusionHUD Presets (10–14) ===
-      case 10:  // FULL — 所有指标
+      // === FusionHUD 单一布局 ===
+      // 只保留一种面板（Full）；preset 10~14 一律等价，避免多套布局各修一遍。
+      // 想恢复其它布局：把下面四行标签删掉，并把对应 case 各自独立出来即可
+      // （TILES / PILL / MINIMAL / MEGA 的 builder 代码仍在 fusion_render.hpp）。
+      case 11:
+      case 12:
+      case 13:
+      case 14:
+      case 10:  // FULL — 唯一布局（所有指标）
          add_to_options(params, "full", "1");
          add_to_options(params, "fps", "1");
          add_to_options(params, "frame_timing", "1");
@@ -1487,115 +1494,6 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
          break;
 
-      case 11:  // TILES — 磁贴布局
-         add_to_options(params, "fps", "1");
-         add_to_options(params, "frame_timing", "1");
-         add_to_options(params, "frametime", "1");
-         add_to_options(params, "cpu_stats", "1");
-         add_to_options(params, "cpu_temp", "1");
-         add_to_options(params, "cpu_mhz", "1");
-         add_to_options(params, "gpu_stats", "1");
-         add_to_options(params, "gpu_temp", "1");
-         add_to_options(params, "gpu_core_clock", "1");
-         add_to_options(params, "ram", "1");
-         add_to_options(params, "vram", "1");
-         add_to_options(params, "battery", "1");
-         add_to_options(params, "legacy_layout", "0");
-         add_to_options(params, "hud_compact", "1");
-         add_to_options(params, "table_columns", "2");
-         add_to_options(params, "horizontal", "1");
-
-         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
-         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::TILES))
-            add_to_options(params, kv.first, kv.second);
-         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
-         // 会被复位冲掉，所以必须再经选项路径应用一次。
-         add_to_options(params, "fusion_tiles", "1");
-         params->enabled[OVERLAY_PARAM_ENABLED_fusion_tiles] = true;
-         break;
-
-      case 12:  // PILL — 胶囊布局
-         add_to_options(params, "fps", "1");
-         add_to_options(params, "frame_timing", "1");
-         add_to_options(params, "frametime", "1");
-         add_to_options(params, "cpu_stats", "1");
-         add_to_options(params, "cpu_temp", "1");
-         add_to_options(params, "cpu_mhz", "1");
-         add_to_options(params, "gpu_stats", "1");
-         add_to_options(params, "gpu_temp", "1");
-         add_to_options(params, "gpu_core_clock", "1");
-         add_to_options(params, "ram", "1");
-         add_to_options(params, "vram", "1");
-         add_to_options(params, "battery", "1");
-         add_to_options(params, "legacy_layout", "0");
-         add_to_options(params, "hud_compact", "1");
-         add_to_options(params, "table_columns", "1");
-
-         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
-         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::PILL))
-            add_to_options(params, kv.first, kv.second);
-         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
-         // 会被复位冲掉，所以必须再经选项路径应用一次。
-         add_to_options(params, "fusion_pill", "1");
-         params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = true;
-         break;
-
-      case 13:  // MINIMAL — 极简
-         add_to_options(params, "fps", "1");
-         add_to_options(params, "frametime", "1");
-         add_to_options(params, "cpu_stats", "1");
-         add_to_options(params, "gpu_stats", "1");
-         add_to_options(params, "ram", "1");
-         add_to_options(params, "vram", "0");
-         add_to_options(params, "legacy_layout", "0");
-         add_to_options(params, "hud_compact", "1");
-         add_to_options(params, "table_columns", "1");
-
-         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
-         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MINIMAL))
-            add_to_options(params, kv.first, kv.second);
-         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
-         // 会被复位冲掉，所以必须再经选项路径应用一次。
-         add_to_options(params, "fusion_minimal", "1");
-         params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = true;
-         break;
-
-      case 14:  // MEGA — 巨幅（含 FPS 图）
-         add_to_options(params, "full", "1");
-         add_to_options(params, "fps", "1");
-         add_to_options(params, "frame_timing", "1");
-         add_to_options(params, "frametime", "1");
-         add_to_options(params, "cpu_stats", "1");
-         add_to_options(params, "cpu_temp", "1");
-         add_to_options(params, "cpu_mhz", "1");
-         add_to_options(params, "cpu_power", "1");
-         add_to_options(params, "core_load", "1");
-         add_to_options(params, "core_bars", "1");
-         add_to_options(params, "gpu_stats", "1");
-         add_to_options(params, "gpu_temp", "1");
-         add_to_options(params, "gpu_core_clock", "1");
-         add_to_options(params, "gpu_mem_clock", "1");
-         add_to_options(params, "gpu_power", "1");
-         add_to_options(params, "gpu_junction_temp", "1");
-         add_to_options(params, "gpu_mem_temp", "1");
-         add_to_options(params, "ram", "1");
-         add_to_options(params, "vram", "1");
-         add_to_options(params, "battery", "1");
-         add_to_options(params, "battery_watt", "1");
-         add_to_options(params, "graphs", "1");
-         add_to_options(params, "histogram", "1");
-         add_to_options(params, "legacy_layout", "0");
-         add_to_options(params, "hud_compact", "1");
-         add_to_options(params, "table_columns", "1");
-
-         // ---- FusionHUD 主题（唯一事实源 src/fusion_theme.hpp）----
-         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::MEGA))
-            add_to_options(params, kv.first, kv.second);
-         // 同时作为选项写入：本函数里的直接赋值发生在 full 的"全开"之前，
-         // 会被复位冲掉，所以必须再经选项路径应用一次。
-         add_to_options(params, "fusion_mega", "1");
-         params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = true;
-         break;
 
    }
 }
