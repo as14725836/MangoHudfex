@@ -146,6 +146,34 @@ static std::string libmangohud_dir() {
    return hit.substr(0, slash);
 }
 
+/** 用户字体目录扫描：任意 .ttf 都算（跳过随包的 MangoHud-CJK.ttf）。
+ *  这样把字体丢进 fonts 目录就能生效，不用记固定文件名。 */
+static std::string first_user_font(const std::string& dir) {
+   DIR* d = opendir(dir.c_str());
+   if (!d)
+      return {};
+   std::string hit;
+   while (auto* e = readdir(d)) {
+      std::string name = e->d_name;
+      if (name.size() < 5 || name[0] == '.')
+         continue;
+      if (name == "MangoHud-CJK.ttf")
+         continue;
+      std::string low = name;
+      for (char& c : low)
+         c = (char)tolower((unsigned char)c);
+      if (low.size() < 4 || low.compare(low.size() - 4, 4, ".ttf") != 0)
+         continue;
+      const std::string path = dir + "/" + name;
+      if (is_loadable_ttf(path)) {
+         hit = path;
+         break;
+      }
+   }
+   closedir(d);
+   return hit;
+}
+
 static std::string fusion_font_path(const overlay_params& params) {
    if (is_loadable_ttf(params.font_file))
       return params.font_file;   // 用户在配置里指定了字体，尊重其选择
@@ -153,6 +181,19 @@ static std::string fusion_font_path(const overlay_params& params) {
    if (const char* env = std::getenv("MANGOHUD_FUSION_FONT")) {
       if (*env && is_loadable_ttf(env))
          return env;
+   }
+   // 用户自放字体：fonts 目录里任何 .ttf 都优先于随包中文子集
+   static const char* kUserFontDirs[] = {
+      "/data/data/com.termux/files/usr/glibc/share/fonts",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts",
+      "/data/data/com.termux/files/usr/share/fonts",
+      "/data/data/com.termux/files/usr/share/mangohud/fonts",
+   };
+   for (const char* dir : kUserFontDirs) {
+      if (std::string p = first_user_font(dir); !p.empty()) {
+         SPDLOG_INFO("fusion font: user font picked: {}", p);
+         return p;
+      }
    }
 
    // 随包中文子集：固定位置先试一遍（不依赖 fontconfig / 安装前缀）
