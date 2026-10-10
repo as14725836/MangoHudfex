@@ -345,35 +345,37 @@ inline std::vector<Span> num_unit(const int* v, const char* unit, float px, floa
     const int width = (unit && std::strcmp(unit, "MHz") == 0) ? 4 : 3;
     if (!v || *v < 0)
         return {Span{pad_dash(width), kColDim, px}, Span{unit, kColUnit, unit_px}};
-    return {Span{fmt_i(*v, width), kColValue, px}, Span{unit, kColUnit, unit_px}};
+    return {Span{fmt_i(*v, width), kColNum, px}, Span{unit, kColUnit, unit_px}};
 }
 
 /** 浮点版本：<= 0 视为无数据（FusionHUD 的 lowText 语义） */
 inline std::vector<Span> num_unit_f(float v, const char* unit, float px, float unit_px) {
     if (!(v > 0.0f))
         return {Span{pad_dash(5), kColDim, px}, Span{unit, kColUnit, unit_px}};
-    return {Span{fmt_f(v, 5, 1), kColValue, px}, Span{unit, kColUnit, unit_px}};
+    return {Span{fmt_f(v, 5, 1), kColNum, px}, Span{unit, kColUnit, unit_px}};
 }
 
-/** "3.2GiB" → 白色数字 + 灰色后缀 */
+/** "3.2GiB" → 橙色数字 + 灰色后缀 */
 inline std::vector<Span> value_unit(const std::string& t, float px, float unit_px) {
     if (t.empty())
         return {};
     size_t lead = 0;
     while (lead < t.size() && t[lead] == ' ')
-        ++lead;   // 前导空格是数字字段的固定占位，保留在白色段里
+        ++lead;   // 前导空格是数字字段的固定占位，保留在橙色段里
     size_t i = lead;
     while (i < t.size() && (std::isdigit(static_cast<unsigned char>(t[i])) || t[i] == '.' || t[i] == '-'))
         ++i;
-    if (i == lead || i >= t.size())
-        return {Span{t, kColValue, px}};
-    return {Span{t.substr(0, i), kColValue, px}, Span{t.substr(i), kColUnit, unit_px}};
+    if (i == lead)
+        return {Span{t, kColValue, px}};   // 无数字：保持值白兜底
+    if (i >= t.size())
+        return {Span{t, kColNum, px}};     // 纯数字
+    return {Span{t.substr(0, i), kColNum, px}, Span{t.substr(i), kColUnit, unit_px}};
 }
 
 inline std::vector<Span> temp_spans(int c, float px, float unit_px) {
     if (c < 0)
         return {};
-    return {Span{fmt_i(c, 3), kColValue, px}, Span{"°C", kColUnit, unit_px}};
+    return {Span{fmt_i(c, 3), kColNum, px}, Span{"°C", kColUnit, unit_px}};
 }
 
 inline std::string gib(float v) { return fmt_f(v, 4, 1) + "GiB"; }
@@ -982,7 +984,7 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
         Tile t;
         t.key = hud_i18n::tr("FPS");
         t.key_col = kColFps;
-        t.value = {Span{fmt_f(s.fps, 5, 1), kColValue, val_px}};
+        t.value = {Span{fmt_f(s.fps, 5, 1), kColNum, val_px}};
         t.sub = fmt_f(s.fps_avg, 5, 1) + " avg · " +
                 (s.low1 > 0.0f ? fmt_f(s.low1, 5, 1) : pad_dash(5)) + " 1%";
         t.has_sub = true;
@@ -1203,7 +1205,7 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     const float mid_gap = f.M.gsp(12.0f);
     const float stk_line_gap = f.M.gsp(3.0f);
 
-    std::vector<Span> left = {Span{fmt_f(s.fps, 5, 1), kColValue, big_px},
+    std::vector<Span> left = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
                               Span{"fps", kColDim, big_unit_px}};
 
     std::vector<std::vector<Span>> stack;
@@ -1323,7 +1325,7 @@ inline void build_minimal(Frame& f, const Snapshot& s, const Chips& c) {
     const float pad = f.M.gsp(10.0f);
     const float line_gap = f.M.gsp(6.0f);
 
-    const std::vector<Span> big = {Span{fmt_f(s.fps, 5, 1), kColValue, big_px},
+    const std::vector<Span> big = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
                                    Span{"fps", kColDim, big_unit_px}};
     std::vector<Span> sub;
     sub.push_back(Span{"1% ", kColDim, sub_px});
