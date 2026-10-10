@@ -909,7 +909,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     // 程序名：wine 打开的程序（game.exe …），排在最下面（在“运行模式”之后再往下一行）
     if (!f.prog_text.empty())
         add(hud_i18n::tr("Program"), kColAccent,
-            std::vector<Span>{Span{f.prog_text, kColInfo, row_px}});
+            std::vector<Span>{Span{f.prog_text, kColProg, row_px}});
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
@@ -923,9 +923,9 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         const std::vector<std::string> ml =
             wrap_name_to(f.M, model_txt, row_px, lw + lv_gap + vw);
         std::vector<Row> mrows;
-        mrows.push_back(Row{Span{ml[0], kColValue, row_px}, {}, true});
+        mrows.push_back(Row{Span{ml[0], kColModel, row_px}, {}, true});
         for (size_t i = 1; i < ml.size(); ++i)
-            mrows.push_back(Row{Span{ml[i], kColValue, row_px}, {}, true});
+            mrows.push_back(Row{Span{ml[i], kColModel, row_px}, {}, true});
         rows.insert(rows.begin(), mrows.begin(), mrows.end());
     }
 
@@ -1529,9 +1529,9 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         }
         const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
         std::vector<Row> mrows;
-        mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColValue, row_px}}, false});
+        mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColModel, row_px}}, false});
         for (size_t i = 1; i < ml.size(); ++i)
-            mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColValue, row_px}}, false});
+            mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColModel, row_px}}, false});
         left.insert(left.begin(), mrows.begin(), mrows.end());
     }
 
