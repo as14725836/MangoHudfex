@@ -1676,9 +1676,10 @@ inline float panel_margin(const Frame& f, const Options& opt) {
 
 /** 发光开关：MANGOHUD_FUSION_GLOW=0 关闭（默认开） */
 inline bool fusion_glow_enabled() {
+    // 默认关：光晕是把字形拷贝多遍往外铺，小字会发糊。想要灯管感再手动开。
     static const bool on = [] {
         const char* e = std::getenv("MANGOHUD_FUSION_GLOW");
-        return !(e && e[0] == '0');
+        return e && e[0] == '1';
     }();
     return on;
 }
