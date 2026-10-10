@@ -17,7 +17,7 @@ env:
   # termux-glibc 为扁平布局：安装树展开掉 usr/，得到 <root>/lib、<root>/share、<root>/bin
   PREFIX: /usr
   LAYOUT: flat
-  LIBDIR: lib/mangohud
+  LIBDIR: lib/fhud
 
 jobs:
   build:
@@ -153,7 +153,7 @@ jobs:
 
           # 检查产物
           echo "📦 安装树（前 30 项）:"
-          find build/release -type f \( -name '*.so*' -o -name 'mangohud' -o -name '*.json' \) | head -30
+          find build/release -type f \( -name '*.so*' -o -name 'fhud' -o -name '*.json' \) | head -30
 
           echo "--- 关键产物 ---"
           if [ -f "build/src/libFHUD.so" ]; then
@@ -225,9 +225,9 @@ jobs:
             ### ⚙️ 编译选项
             ```meson
             --prefix=/usr
-            --libdir=lib/mangohud
+            --libdir=lib/fhud
             --buildtype=release
-            -Dappend_libdir_mangohud=false
+            -Dappend_libdir_fhud=false
             -Dwith_fex=true          # <- 本 fork 的关键开关（-DHAVE_FEX + src/fex.cpp）
             -Dwith_nvml=disabled
             -Dwith_xnvctrl=disabled
@@ -248,14 +248,14 @@ jobs:
 
             # 2. 把 Vulkan 层清单里的库路径改到 Termux glibc 根
             find /data/data/com.termux/files/usr/glibc/share/vulkan -name '*.json' \
-              -exec sed -i 's#/lib/mangohud#/data/data/com.termux/files/usr/glibc/lib/mangohud#g' {} +
+              -exec sed -i 's#/lib/fhud#/data/data/com.termux/files/usr/glibc/lib/fhud#g' {} +
 
             # 3. 使用（Vulkan：自动启用 implicit layer）
             export VK_LAYER_PATH=/data/data/com.termux/files/usr/glibc/share/vulkan/implicit_layer.d
             export MANGOHUD=1
 
             # 4. 或直接 LD_PRELOAD（OpenGL / 通用）
-            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/lib/mangohud/libFHUD.so
+            export LD_PRELOAD=/data/data/com.termux/files/usr/glibc/lib/fhud/libFHUD.so
             ```
 
             ### ⚠️ 注意事项

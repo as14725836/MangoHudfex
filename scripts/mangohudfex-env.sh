@@ -14,13 +14,13 @@
 
 GLIBC_ROOT="${GLIBC_ROOT:-/data/data/com.termux/files/usr/glibc}"
 # 自动适配两种布局：
-#   扁平： <glibc>/lib/mangohud          （termux-glibc 实际用的就是这种）
-#   usr ： <glibc>/usr/lib/mangohud
+#   扁平： <glibc>/lib/fhud          （termux-glibc 实际用的就是这种）
+#   usr ： <glibc>/usr/lib/fhud
 if [ -z "${MANGO_LIB_DIR:-}" ]; then
-    for _c in "$GLIBC_ROOT/lib/mangohud" "$GLIBC_ROOT/usr/lib/mangohud"; do
+    for _c in "$GLIBC_ROOT/lib/fhud" "$GLIBC_ROOT/usr/lib/fhud"; do
         [ -d "$_c" ] && { MANGO_LIB_DIR="$_c"; break; }
     done
-    MANGO_LIB_DIR="${MANGO_LIB_DIR:-$GLIBC_ROOT/lib/mangohud}"
+    MANGO_LIB_DIR="${MANGO_LIB_DIR:-$GLIBC_ROOT/lib/fhud}"
 fi
 
 if [ -z "${MANGO_LAYER_DIR:-}" ]; then

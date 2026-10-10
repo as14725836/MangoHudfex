@@ -268,12 +268,12 @@ static std::string fusion_font_path(const overlay_params& params) {
          return p;
 
 
-   // 2) 再按 libFHUD.so 的位置找随包字体（<prefix>/lib/mangohud -> <prefix>/share/mangohud/fonts）
+   // 2) 再按 libFHUD.so 的位置找随包字体（<prefix>/lib/fhud -> <prefix>/share/mangohud/fonts）
    if (const std::string lib_dir = libmangohud_dir(); !lib_dir.empty()) {
       static const char* kRel[] = {
-         "../../share/mangohud/fonts/",   // lib/mangohud/ 安装（本包/多数发行版）
+         "../../share/mangohud/fonts/",   // lib/fhud/ 安装（本包/多数发行版）
          "../share/mangohud/fonts/",      // lib/ 直接安装
-         "../lib/mangohud/fonts/",        // 字体与库放一起
+         "../lib/fhud/fonts/",        // 字体与库放一起
          "/",                             // 字体就在库旁边
       };
       static const char* kNames[] = {

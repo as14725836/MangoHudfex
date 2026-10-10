@@ -1,7 +1,7 @@
-# runtime dependencies for `mangoplot`: matplotlib and a GUI backed like PyQt5
+# runtime dependencies for `fhudplot`: matplotlib and a GUI backed like PyQt5
 install_data(
-  'mangoplot.py',
+  'fhudplot.py',
   install_dir: get_option('bindir'),
-  rename: 'mangoplot',
+  rename: 'fhudplot',
   install_mode: 'rwxr-xr-x'
 )

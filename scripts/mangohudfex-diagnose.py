@@ -32,8 +32,8 @@ def _pick_dir(*cands):
 
 # 扁平布局（<glibc>/lib/...）优先，回落 usr 布局（<glibc>/usr/lib/...）
 LIB_DIR = os.environ.get("MANGO_LIB_DIR") or _pick_dir(
-    os.path.join(GLIBC_ROOT, "lib/mangohud"),
-    os.path.join(GLIBC_ROOT, "usr/lib/mangohud"),
+    os.path.join(GLIBC_ROOT, "lib/fhud"),
+    os.path.join(GLIBC_ROOT, "usr/lib/fhud"),
 )
 LAYER_DIR = os.environ.get("MANGO_LAYER_DIR") or _pick_dir(
     os.path.join(GLIBC_ROOT, "share/vulkan/implicit_layer.d"),

@@ -32,15 +32,15 @@ mangohud_config() {
 
 mangohud_uninstall() {
     [ "$UID" -eq 0 ] || exec $SU_CMD bash "$0" uninstall
-    rm -rfv "/usr/lib/mangohud"
+    rm -rfv "/usr/lib/fhud"
     rm -fv "/usr/share/vulkan/implicit_layer.d/FHUD.x86.json"
     rm -fv "/usr/share/vulkan/implicit_layer.d/FHUD.x86_64.json"
     rm -fv "/usr/share/vulkan/implicit_layer.d/FHUD.json"
     rm -frv "/usr/share/doc/mangohud"
     rm -fv "/usr/share/man/man1/mangohud.1"
-    rm -fv "/usr/bin/mangohud"
-    rm -fv "/usr/bin/mangoplot"
-    rm -fv "/usr/bin/mangohud.x86"
+    rm -fv "/usr/bin/fhud"
+    rm -fv "/usr/bin/fhudplot"
+    rm -fv "/usr/bin/fhud.x86"
 }
 
 mangohud_install() {
@@ -51,7 +51,7 @@ mangohud_install() {
 
     if [ "$UID" -ne 0 ]; then
         if [ ! -f "$SCRIPT_DIR/MangoHud-package.tar" ]; then
-            echo "Error: MangoHud-package.tar was not found next to mangohud-setup.sh."
+            echo "Error: MangoHud-package.tar was not found next to fhud-setup.sh."
             exit 1
         fi
 
@@ -60,7 +60,7 @@ mangohud_install() {
             exit 1
         }
 
-        exec $SU_CMD bash "$SCRIPT_DIR/mangohud-setup.sh" install
+        exec $SU_CMD bash "$SCRIPT_DIR/fhud-setup.sh" install
     fi
 
     mangohud_uninstall
@@ -75,49 +75,49 @@ mangohud_install() {
     done
 
     echo DEFAULTLIB: $DEFAULTLIB
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libFHUD.so /usr/lib/mangohud/lib64/libFHUD.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libFHUD.so /usr/lib/mangohud/lib32/libFHUD.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libFHUD_opengl.so /usr/lib/mangohud/lib64/libFHUD_opengl.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libFHUD_opengl.so /usr/lib/mangohud/lib32/libFHUD_opengl.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib64/libFHUD_shim.so /usr/lib/mangohud/lib64/libFHUD_shim.so
-    /usr/bin/install -Dvm644 ./usr/lib/mangohud/lib32/libFHUD_shim.so /usr/lib/mangohud/lib32/libFHUD_shim.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib64/libFHUD.so /usr/lib/fhud/lib64/libFHUD.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib32/libFHUD.so /usr/lib/fhud/lib32/libFHUD.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib64/libFHUD_opengl.so /usr/lib/fhud/lib64/libFHUD_opengl.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib32/libFHUD_opengl.so /usr/lib/fhud/lib32/libFHUD_opengl.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib64/libFHUD_shim.so /usr/lib/fhud/lib64/libFHUD_shim.so
+    /usr/bin/install -Dvm644 ./usr/lib/fhud/lib32/libFHUD_shim.so /usr/lib/fhud/lib32/libFHUD_shim.so
     /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/FHUD.x86_64.json /usr/share/vulkan/implicit_layer.d/FHUD.x86_64.json
     /usr/bin/install -Dvm644 ./usr/share/vulkan/implicit_layer.d/FHUD.x86.json /usr/share/vulkan/implicit_layer.d/FHUD.x86.json
     /usr/bin/install -Dvm644 ./usr/share/man/man1/mangohud.1 /usr/share/man/man1/mangohud.1
     /usr/bin/install -Dvm644 ./usr/share/doc/mangohud/MangoHud.conf.example /usr/share/doc/mangohud/MangoHud.conf.example
-    /usr/bin/install -vm755  ./usr/bin/mangohud /usr/bin/mangohud
-    /usr/bin/install -vm755  ./usr/bin/mangohud-server /usr/bin/mangohud-server
-    /usr/bin/install -vm755  ./usr/bin/mangoplot /usr/bin/mangoplot
+    /usr/bin/install -vm755  ./usr/bin/fhud /usr/bin/fhud
+    /usr/bin/install -vm755  ./usr/bin/fhud-server /usr/bin/fhud-server
+    /usr/bin/install -vm755  ./usr/bin/fhudplot /usr/bin/fhudplot
 
-    ln -sv $DEFAULTLIB /usr/lib/mangohud/lib
+    ln -sv $DEFAULTLIB /usr/lib/fhud/lib
 
     # FIXME get the triplet somehow
-    ln -sv lib64 /usr/lib/mangohud/x86_64
-    ln -sv lib64 /usr/lib/mangohud/x86_64-linux-gnu
-    ln -sv . /usr/lib/mangohud/lib64/x86_64
-    ln -sv . /usr/lib/mangohud/lib64/x86_64-linux-gnu
+    ln -sv lib64 /usr/lib/fhud/x86_64
+    ln -sv lib64 /usr/lib/fhud/x86_64-linux-gnu
+    ln -sv . /usr/lib/fhud/lib64/x86_64
+    ln -sv . /usr/lib/fhud/lib64/x86_64-linux-gnu
 
-    ln -sv lib32 /usr/lib/mangohud/i686
-    ln -sv lib32 /usr/lib/mangohud/i386-linux-gnu
-    ln -sv lib32 /usr/lib/mangohud/i686-linux-gnu
+    ln -sv lib32 /usr/lib/fhud/i686
+    ln -sv lib32 /usr/lib/fhud/i386-linux-gnu
+    ln -sv lib32 /usr/lib/fhud/i686-linux-gnu
 
-    mkdir -p /usr/lib/mangohud/tls
-    ln -sv ../lib64 /usr/lib/mangohud/tls/x86_64
-    ln -sv ../lib32 /usr/lib/mangohud/tls/i686
+    mkdir -p /usr/lib/fhud/tls
+    ln -sv ../lib64 /usr/lib/fhud/tls/x86_64
+    ln -sv ../lib32 /usr/lib/fhud/tls/i686
 
     # Some distros search in $prefix/x86_64-linux-gnu/tls/x86_64 etc instead
-    if [ ! -e /usr/lib/mangohud/lib/i386-linux-gnu ]; then
-        ln -sv ../lib32 /usr/lib/mangohud/lib/i386-linux-gnu
+    if [ ! -e /usr/lib/fhud/lib/i386-linux-gnu ]; then
+        ln -sv ../lib32 /usr/lib/fhud/lib/i386-linux-gnu
     fi
-    if [ ! -e /usr/lib/mangohud/lib/i686-linux-gnu ]; then
-        ln -sv ../lib32 /usr/lib/mangohud/lib/i686-linux-gnu
+    if [ ! -e /usr/lib/fhud/lib/i686-linux-gnu ]; then
+        ln -sv ../lib32 /usr/lib/fhud/lib/i686-linux-gnu
     fi
-    if [ ! -e /usr/lib/mangohud/lib/x86_64-linux-gnu ]; then
-        ln -sv ../lib64 /usr/lib/mangohud/lib/x86_64-linux-gnu
+    if [ ! -e /usr/lib/fhud/lib/x86_64-linux-gnu ]; then
+        ln -sv ../lib64 /usr/lib/fhud/lib/x86_64-linux-gnu
     fi
 
     # $LIB can be "lib/tls/x86_64"?
-    ln -sv ../tls /usr/lib/mangohud/lib/tls
+    ln -sv ../tls /usr/lib/fhud/lib/tls
 
     # Let's not clean up because this can be destructive
     # rm -rf ./usr

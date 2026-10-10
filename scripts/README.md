@@ -23,9 +23,9 @@
 没有 `usr/` 这一层），所以默认用空前缀，安装树为：
 
 ```
-<glibc>/lib/mangohud/libFHUD.so
+<glibc>/lib/fhud/libFHUD.so
 <glibc>/share/vulkan/implicit_layer.d/FHUD.aarch64.json
-<glibc>/bin/mangohud
+<glibc>/bin/fhud
 ```
 
 （meson 要求 `--prefix` 必须是绝对路径，所以构建时固定 `--prefix=/usr`，
@@ -34,8 +34,8 @@
 若目标是 `usr/` 布局（`<glibc>/usr/lib/...`）：
 `LAYOUT=usr ./scripts/build-termux-glibc.sh`。
 
-`bin/mangohud` 里的 shim 路径在**运行时按脚本自身位置自定位**（依次尝试 `../lib/mangohud`、
-`../usr/lib/mangohud` 等），因此两种布局都不会出现 `LD_PRELOAD` 指向不存在的文件。
+`bin/fhud` 里的 shim 路径在**运行时按脚本自身位置自定位**（依次尝试 `../lib/fhud`、
+`../usr/lib/fhud` 等），因此两种布局都不会出现 `LD_PRELOAD` 指向不存在的文件。
 
 ## 2. 运行
 

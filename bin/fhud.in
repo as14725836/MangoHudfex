@@ -18,15 +18,15 @@ RiseOfTheTombRaider.sh
 # shim 路径：优先按脚本自身位置自定位，回落到构建时写入的路径。
 # 这样 glibc 的“扁平布局”（<glibc>/lib/...）与“usr 布局”（<glibc>/usr/lib/...）
 # 都能命中，构建前缀写错也不会让 LD_PRELOAD 指向不存在的文件。
-MANGOHUD_LIB_NAME="@ld_libdir_mangohud@libFHUD_shim.so"
+FHUD_LIB_NAME="@ld_libdir_mangohud@libFHUD_shim.so"
 _self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)
-for _cand in "$_self_dir/../lib/mangohud" \
-             "$_self_dir/../usr/lib/mangohud" \
-             "$_self_dir/../lib64/mangohud" \
-             "$_self_dir/../lib/x86_64-linux-gnu/mangohud"; do
+for _cand in "$_self_dir/../lib/fhud" \
+             "$_self_dir/../usr/lib/fhud" \
+             "$_self_dir/../lib64/fhud" \
+             "$_self_dir/../lib/x86_64-linux-gnu/fhud"; do
     if [ -f "$_cand/libFHUD_shim.so" ]; then
         # 规范化，去掉 "bin/../" 这类冗余段
-        MANGOHUD_LIB_NAME="$(CDPATH= cd -- "$_cand" && pwd)/libFHUD_shim.so"
+        FHUD_LIB_NAME="$(CDPATH= cd -- "$_cand" && pwd)/libFHUD_shim.so"
         break
     fi
 done
@@ -93,12 +93,12 @@ else
     # Make sure we don't append mangohud lib multiple times
     # otherwise, this could cause issues with the steam runtime
     case ":${LD_PRELOAD-}:" in
-        (*:$MANGOHUD_LIB_NAME:*)
+        (*:$FHUD_LIB_NAME:*)
             ;;
         (*)
             # Preload using the plain filenames of the libs, the dynamic linker will
             # figure out whether the 32 or 64 bit version should be used
-            LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}${MANGOHUD_LIB_NAME}"
+            LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}${FHUD_LIB_NAME}"
     esac
 
     exec env MANGOHUD=1 LD_PRELOAD="${LD_PRELOAD}" "$@"

@@ -330,6 +330,6 @@ if get_option('tests').enabled()
 endif
 
 # install helper scripts
-if get_option('mangoplot').enabled()
+if get_option('fhudplot').enabled()
   subdir('bin')
 endif

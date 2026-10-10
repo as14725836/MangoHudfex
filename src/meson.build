@@ -7,9 +7,9 @@ else
 endif
 
 # Needs prefix for configure_file()
-if get_option('append_libdir_mangohud')
-  libdir_mangohud = join_paths(get_option('prefix'), get_option('libdir'), 'mangohud')
-  ld_libdir_mangohud = ld_prefix + 'mangohud/'
+if get_option('append_libdir_fhud')
+  libdir_mangohud = join_paths(get_option('prefix'), get_option('libdir'), 'fhud')
+  ld_libdir_mangohud = ld_prefix + 'fhud/'
 else
   libdir_mangohud = join_paths(get_option('prefix'), get_option('libdir'))
   ld_libdir_mangohud = ld_prefix
@@ -339,8 +339,8 @@ configure_file(input : 'mangohud.json.in',
   install_tag : 'runtime',
 )
 
-configure_file(input : '../bin/mangohud.in',
-  output : 'mangohud',
+configure_file(input : '../bin/fhud.in',
+  output : 'fhud',
   configuration : conf_data,
   install_dir : get_option('bindir'),
   install_tag : 'scripts',

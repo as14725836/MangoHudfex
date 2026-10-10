@@ -29,7 +29,7 @@ A Vulkan and OpenGL overlay for monitoring FPS, temperatures, CPU/GPU load and m
   - [Workarounds](#workarounds)
   - [FPS logging](#fps-logging)
     - [Online visualization: FlightlessMango.com](#online-visualization-flightlessmangocom)
-    - [Local visualization: `mangoplot`](#local-visualization-mangoplot)
+    - [Local visualization: `fhudplot`](#local-visualization-fhudplot)
   - [Metrics support by GPU vendor/driver](#metrics-support-by-gpu-vendordriver)
 
 ## Installation - Build From Source
@@ -51,7 +51,7 @@ ninja -C build install
 ```
 
 By default, meson should install MangoHud to `/usr/local`. Specify install prefix with `--prefix=/usr` if desired.
-Add `-Dappend_libdir_mangohud=false` option to meson to not append `mangohud` to libdir if desired (e.g. /usr/local/lib/mangohud).
+Add `-Dappend_libdir_fhud=false` option to meson to not append `fhud` to libdir if desired (e.g. /usr/local/lib/fhud).
 
 To install 32-bit build on 64-bit distro, specify proper `libdir`: `lib32` for Arch, `lib/i386-linux-gnu` on Debian-based distros. RPM-based distros usually install 32-bit libraries to `/usr/lib` and 64-bit to `/usr/lib64`.
 You may have to change `PKG_CONFIG_PATH` to point to correct folders for your distro.
@@ -98,7 +98,7 @@ If distro's packaged `meson` is too old and gives build errors, install newer ve
 | mangoapp      | false      |Includes mangoapp
 | mangohudctl   | false      |Include mangohudctl
 | tests         | auto       |Includes tests
-| mangoplot     | true       |Includes mangoplot
+| fhudplot     | true       |Includes fhudplot
 
 
 ### Building with build script
@@ -162,7 +162,7 @@ __NOTE: If you are running an Ubuntu-based, Arch-based, Fedora-based, or openSUS
 If you do not wish to compile anything, simply download the file under [Releases](https://github.com/flightlessmango/MangoHud/releases), extract it, and from within the extracted folder in terminal, execute:
 
 ```
-./mangohud-setup.sh install
+./fhud-setup.sh install
 ```
 
 ### Arch-based distributions
@@ -537,8 +537,8 @@ Notes:
 
 ![Gif illustrating the log uploading process](assets/log_upload_example.gif)
 
-### Local visualization: `mangoplot`
-`mangoplot` is a plotting script that is shipped with `MangoHud`: on a given folder, it takes each log file, makes a 1D heatmap of its framerates, then stacks the heats maps vertically to form a 2D graph for easy visual comparison between benchmarks.
+### Local visualization: `fhudplot`
+`fhudplot` is a plotting script that is shipped with `MangoHud`: on a given folder, it takes each log file, makes a 1D heatmap of its framerates, then stacks the heats maps vertically to form a 2D graph for easy visual comparison between benchmarks.
 
 Example output:
 

@@ -11,7 +11,7 @@
 #   GLIBC_ROOT   Termux glibc 根（默认 /data/data/com.termux/files/usr/glibc）
 #   PREFIX       meson --prefix（默认 /usr；必须是绝对路径）
 #   LAYOUT       安装树布局：flat（默认，termux-glibc 扁平布局）或 usr
-#   LIBDIR       meson --libdir（默认 lib/mangohud）
+#   LIBDIR       meson --libdir（默认 lib/fhud）
 #   BUILDTYPE    release/debug（默认 release）
 #   NPROC        并行度（默认 nproc）
 #   DIST_DIR     产物目录（默认 dist）
@@ -23,7 +23,7 @@ cd "$REPO_ROOT"
 
 # ---------------- 可配置项 ----------------
 GLIBC_ROOT="${GLIBC_ROOT:-/data/data/com.termux/files/usr/glibc}"
-LIBDIR="${LIBDIR:-lib/mangohud}"
+LIBDIR="${LIBDIR:-lib/fhud}"
 BUILDTYPE="${BUILDTYPE:-release}"
 BUILD_DIR="${BUILD_DIR:-build}"
 DIST_DIR="${DIST_DIR:-dist}"
@@ -45,9 +45,9 @@ DESTDIR_ABS="${REPO_ROOT}/${BUILD_DIR}/release"
 # ---- 安装前缀 / 安装树布局 ----------------------------------------------------
 # meson 要求 --prefix 必须是**绝对路径**，所以构建时一律用 /usr；
 # 最终安装树再按 LAYOUT 决定是否把 usr/ 这一层展开掉：
-#   flat（默认）：<root>/lib/mangohud、<root>/share/…、<root>/bin/…
+#   flat（默认）：<root>/lib/fhud、<root>/share/…、<root>/bin/…
 #                 ← termux-glibc 实际就是这个扁平布局（没有 usr 这一层）
-#   usr         ：<root>/usr/lib/mangohud、<root>/usr/share/…、<root>/usr/bin/…
+#   usr         ：<root>/usr/lib/fhud、<root>/usr/share/…、<root>/usr/bin/…
 PREFIX="${PREFIX:-/usr}"
 : "${LAYOUT:=flat}"
 case "$LAYOUT" in
@@ -91,7 +91,7 @@ MESON_OPTS=(
     --prefix="$PREFIX"
     --libdir="$LIBDIR"
     --buildtype="$BUILDTYPE"
-    -Dappend_libdir_mangohud=false
+    -Dappend_libdir_fhud=false
     -Dwith_fex=true
     -Dwith_nvml=disabled
     -Dwith_xnvctrl=disabled
@@ -149,20 +149,20 @@ if [ "$DO_STRIP" -eq 1 ]; then
 fi
 
 # ---------------- 5. 修正 Vulkan 层清单的库路径 ----------------
-# 原产物写死 /usr/lib/mangohud/...，装到 glibc 根后必须改成绝对路径
+# 原产物写死 /usr/lib/fhud/...，装到 glibc 根后必须改成绝对路径
 log "修正 Vulkan 层清单路径 -> ${GLIBC_ROOT}${LIBDIR_ABS}/"
 find "$DESTDIR_ABS${LAYER_DIR}" -name '*.json' -print0 2>/dev/null |
     xargs -0 -r sed -i "s|\"library_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"library_path\" : \"${GLIBC_ROOT}${LIBDIR_ABS}/libFHUD.so\"|"
 
 # ---------------- 6. wrapper 检查 ----------------
-# wrapper 里的 shim 路径由脚本**运行时自定位**（bin/mangohud.in），
+# wrapper 里的 shim 路径由脚本**运行时自定位**（bin/fhud.in），
 # 因此这里不再改写它 —— 早先的 sed 会误伤自定位语句本身。
-WRAPPER="$DESTDIR_ABS${BIN_DIR}/mangohud"
+WRAPPER="$DESTDIR_ABS${BIN_DIR}/fhud"
 if [ -f "$WRAPPER" ]; then
-    if grep -q 'MANGOHUD_LIB_NAME' "$WRAPPER"; then
+    if grep -q 'FHUD_LIB_NAME' "$WRAPPER"; then
         log "wrapper 就绪（shim 路径运行时自定位）"
     else
-        warn "wrapper 中未找到 MANGOHUD_LIB_NAME，LD_PRELOAD 可能失效"
+        warn "wrapper 中未找到 FHUD_LIB_NAME，LD_PRELOAD 可能失效"
     fi
 else
     warn "未生成 wrapper：$WRAPPER"

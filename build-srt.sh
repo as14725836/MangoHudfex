@@ -69,13 +69,13 @@ configure() {
     if [[ ! -f "build-srt/meson64/build.ninja" ]]; then
         export CC="${LOCAL_CC}"
         export CXX="${LOCAL_CXX}"
-        meson build-srt/meson64 --libdir lib/mangohud/lib --prefix /usr -Dappend_libdir_mangohud=false $@ ${CONFIGURE_OPTS}
+        meson build-srt/meson64 --libdir lib/fhud/lib --prefix /usr -Dappend_libdir_fhud=false $@ ${CONFIGURE_OPTS}
     fi
     if [[ ! -f "build-srt/meson32/build.ninja" ]]; then
         export CC="${LOCAL_CC} -m32"
         export CXX="${LOCAL_CXX} -m32"
         export PKG_CONFIG_PATH="/usr/lib32/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig:/usr/lib/pkgconfig:${PKG_CONFIG_PATH_32}"
-        meson build-srt/meson32 --libdir lib/mangohud/lib32 --prefix /usr -Dappend_libdir_mangohud=false $@ ${CONFIGURE_OPTS}
+        meson build-srt/meson32 --libdir lib/fhud/lib32 --prefix /usr -Dappend_libdir_fhud=false $@ ${CONFIGURE_OPTS}
     fi
 }
 
@@ -88,8 +88,8 @@ build() {
 }
 
 package() {
-    LIB="build-srt/release/usr/lib/mangohud/lib/libFHUD.so"
-    LIB32="build-srt/release/usr/lib/mangohud/lib32/libFHUD.so"
+    LIB="build-srt/release/usr/lib/fhud/lib/libFHUD.so"
+    LIB32="build-srt/release/usr/lib/fhud/lib32/libFHUD.so"
     if [[ ! -f "$LIB" || "$LIB" -ot "build-srt/meson64/src/libFHUD.so" ]]; then
         build
     fi
@@ -101,7 +101,7 @@ release() {
     rm build-srt/MangoHud-package.tar
     mkdir -p build-srt/MangoHud
     package
-    cp --preserve=mode bin/mangohud-setup.sh build-srt/MangoHud/mangohud-setup.sh
+    cp --preserve=mode bin/fhud-setup.sh build-srt/MangoHud/fhud-setup.sh
     cp build-srt/MangoHud-package.tar build-srt/MangoHud/MangoHud-package.tar
     tar --numeric-owner --owner=0 --group=0 \
         -C build-srt -czvf build-srt/MangoHud-${VERSION}_${RUNTIME}-${SRT_VERSION}.tar.gz MangoHud
