@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>   // getenv（发光开关）
 #include <ctime>
 #include <string>
 #include <vector>
@@ -1673,6 +1674,25 @@ inline float panel_margin(const Frame& f, const Options& opt) {
     return sw + 4.0f;
 }
 
+/** 发光开关：MANGOHUD_FUSION_GLOW=0 关闭（默认开） */
+inline bool fusion_glow_enabled() {
+    static const bool on = [] {
+        const char* e = std::getenv("MANGOHUD_FUSION_GLOW");
+        return !(e && e[0] == '0');
+    }();
+    return on;
+}
+
+/** 光晕色：把本色向白提亮 k，并压成半透明（灯管周围的那层亮边） */
+inline uint32_t glow_color(uint32_t c, float k, uint32_t alpha) {
+    const uint32_t r = (c >> 16) & 0xFFu, g = (c >> 8) & 0xFFu, b = c & 0xFFu;
+    auto up = [k](uint32_t v) -> uint32_t {
+        const float f = static_cast<float>(v) + (255.0f - static_cast<float>(v)) * k;
+        return static_cast<uint32_t>(std::min(255.0f, f));
+    };
+    return (alpha << 24) | (up(r) << 16) | (up(g) << 8) | up(b);
+}
+
 inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2 o, const Options& opt) {
     if (!dl || f.content_w <= 0.0f || f.content_h <= 0.0f)
         return;
@@ -1786,6 +1806,25 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
         const float sh = std::max(1.0f, std::floor(g.px * 0.055f));
         dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x + sh, o.y + g.top + sh),
                     to_imcol(0xC6000000u), g.text.c_str(), g.text.c_str() + g.text.size());
+        // 发光（深色发亮）：同一字形先用本色提亮的半透明拷贝往外铺两圈，
+        // 再把本色盖上去 —— 看起来就是字在发光的“灯管”效果。
+        if (fusion_glow_enabled()) {
+            const ImFont* gf = f.M.pick(g.px);
+            const char* gs = g.text.c_str();
+            const char* ge = gs + g.text.size();
+            const float r1 = std::max(1.0f, std::floor(g.px * 0.05f));
+            const float r2 = r1 * 2.0f;
+            const uint32_t c_in = glow_color(g.col, 0.45f, 0x66u);
+            const uint32_t c_out = glow_color(g.col, 0.65f, 0x33u);
+            const ImVec2 o1[4] = { {-r1, 0.0f}, { r1, 0.0f}, { 0.0f, -r1}, { 0.0f, r1} };
+            const ImVec2 o2[4] = { {-r2, 0.0f}, { r2, 0.0f}, { 0.0f, -r2}, { 0.0f, r2} };
+            for (const ImVec2& d : o2)
+                dl->AddText(gf, g.px, ImVec2(o.x + g.x + d.x, o.y + g.top + d.y),
+                            to_imcol(c_out), gs, ge);
+            for (const ImVec2& d : o1)
+                dl->AddText(gf, g.px, ImVec2(o.x + g.x + d.x, o.y + g.top + d.y),
+                            to_imcol(c_in), gs, ge);
+        }
         dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
                     g.text.c_str(), g.text.c_str() + g.text.size());
     }

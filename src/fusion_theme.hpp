@@ -277,12 +277,12 @@ inline void randomizePalette(bool force = false)
 
     const float h0 = base_hue(rng);            // 起始色相
     const int rot = slot_rot(rng);             // 槽位旋转：同一色相不会永远落在同一个指标上
-    const float S = 0.74f;                     // 饱和度：更艳（面板透明后需要更强存在感）
-    const float L = 0.78f;                     // 明度：提亮，亮场景下也看得清
+    const float S = 0.82f;                     // 饱和度：深色要够浓，发亮交给光晕
+    const float L = 0.60f;                     // 明度：深色系（配合光晕 = 灯管感）
 
     auto hue_at = [&](int slot) { return h0 + 60.0f * static_cast<float>((slot + rot) % 6); };
     auto shade = [&](int slot) {
-        return detail::hslToRgb(hue_at(slot), S, detail::clampf(L + jitter(rng), 0.66f, 0.88f));
+        return detail::hslToRgb(hue_at(slot), S, detail::clampf(L + jitter(rng), 0.52f, 0.68f));
     };
 
     kColGpu  = shade(0);
@@ -293,7 +293,7 @@ inline void randomizePalette(bool force = false)
     kColFps  = shade(5);
     kColGraph = kColGpu;                       // 折线图与 GPU 同色（沿用原设计）
 
-    kColAccent = detail::hslToRgb(h0 + 30.0f, 0.55f, 0.70f);
+    kColAccent = detail::hslToRgb(h0 + 30.0f, 0.62f, 0.60f);
 
     // 面板底色：同色系极暗调（L≈0.07），整体协调但不会偏色到影响读字
     kColPanelRgb = detail::hslToRgb(h0, 0.28f, 0.07f) & 0x00FFFFFFu;
