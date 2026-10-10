@@ -39,7 +39,7 @@ static bool is_loadable_ttf(const std::string& path) {
 
    const unsigned int tag = ((unsigned int)h[0] << 24) | ((unsigned int)h[1] << 16) |
                             ((unsigned int)h[2] << 8) | (unsigned int)h[3];
-   return tag == 0x00010000u || tag == 0x74727565u;
+   return tag == 0x00010000u || tag == 0x74727565u || tag == 0x4F54544Fu; // OTTO = OpenType/CFF
 }
 
 // 从 fontconfig 配置里取出 <dir>...</dir> 指定的字体目录。
@@ -94,8 +94,10 @@ static std::string first_usable_font(const std::string& dir) {
       std::string low = name;
       for (char& c : low)
          c = (char)tolower((unsigned char)c);
-      if (low.size() < 4 || low.compare(low.size() - 4, 4, ".ttf") != 0)
-         continue;
+      const bool is_ttf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".ttf") == 0;
+   const bool is_otf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".otf") == 0;
+   if (!is_ttf && !is_otf)
+      continue;
 
       const std::string path = dir + "/" + name;
       if (!is_loadable_ttf(path))
@@ -162,8 +164,10 @@ static std::string first_user_font(const std::string& dir) {
       std::string low = name;
       for (char& c : low)
          c = (char)tolower((unsigned char)c);
-      if (low.size() < 4 || low.compare(low.size() - 4, 4, ".ttf") != 0)
-         continue;
+      const bool is_ttf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".ttf") == 0;
+   const bool is_otf = low.size() >= 4 && low.compare(low.size() - 4, 4, ".otf") == 0;
+   if (!is_ttf && !is_otf)
+      continue;
       const std::string path = dir + "/" + name;
       if (is_loadable_ttf(path)) {
          hit = path;
@@ -185,6 +189,9 @@ static std::string fusion_font_path(const overlay_params& params) {
    // 指定字体（钉死优先级）：存在就一定是它，不受目录里其它字体影响。
    // 想换字体：直接覆盖这些文件，或改这一列。
    static const char* kPinFonts[] = {
+      // 当前指定字体（用户选定）：思源黑体 CN Bold（OTF/CFF 轮廓，stb 支持）
+      "/data/data/com.termux/files/usr/glibc/share/fonts/SourceHanSansCN-Bold.otf",
+      "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/SourceHanSansCN-Bold.otf",
       "/data/data/com.termux/files/usr/glibc/share/fonts/hksnt.ttf",
       "/data/data/com.termux/files/usr/glibc/share/mangohud/fonts/hksnt.ttf",
       "/data/data/com.termux/files/usr/glibc/share/fonts/浪漫雅圆.ttf",
