@@ -799,6 +799,35 @@ void horizontal_separator(struct overlay_params& params) {
     ImGui::Spacing();
 }
 
+/**
+ * 当前显示会话（给 FHUD 的 DISP 行用）。
+ *
+ * 口径优先“实际创建 surface 时记下的类型”（vulkan 的 wayland hook、x11 连接探测），
+ * 拿不到再回退到环境变量与平台判断：
+ *   WAYLAND_DISPLAY → Wayland；DISPLAY → X11（两者都有 = XWayland）；
+ *   Android（Winlator / Termux）既无 X 也无 Wayland，但系统本身有 ANDROID_ROOT。
+ */
+static std::string fusion_display_server_text()
+{
+   switch (HUDElements.display_server) {
+      case HUDElements.display_servers::WAYLAND:  return "Wayland";
+      case HUDElements.display_servers::XWAYLAND: return "XWayland";
+      case HUDElements.display_servers::XORG:     return "X11";
+      default: break;
+   }
+   const char* wl = std::getenv("WAYLAND_DISPLAY");
+   const char* xi = std::getenv("DISPLAY");
+   if (wl && *wl)
+      return (xi && *xi) ? "XWayland" : "Wayland";
+   if (xi && *xi)
+      return "X11";
+   const char* aroot = std::getenv("ANDROID_ROOT");
+   const char* adata = std::getenv("ANDROID_DATA");
+   if ((aroot && *aroot) || (adata && *adata))
+      return "Android";
+   return "Unknown";
+}
+
 void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& window_size, bool is_vulkan)
 {
    // 原来这里是每帧阻塞等待配置就绪：配置线程一旦被拖住，
@@ -933,6 +962,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.font_small = data.font_fusion.small ? data.font_fusion.small : fo.font;
          // 面板描边强度：fusion_outline（默认 1.0 → 约 3.5px），0 = 不描边。
          fo.outline = real_params->fusion_outline > 0.0f ? real_params->fusion_outline : 0.0f;
+         fo.disp_text = fusion_display_server_text();
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 

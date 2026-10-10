@@ -598,6 +598,7 @@ struct Frame {
     float content_w = 0.0f;
     float content_h = 0.0f;
     std::string credit;   // 画面署名（自绘模式下由本渲染器负责显示）
+    std::string disp_text;   // DISP 行：当前显示会话（X11 / Wayland / …）
     /** 最后一段文字的基线 + 最后一次 place() 的右端：给底部时钟对齐用 */
     float last_baseline = -1.0f;
     float last_call_right = 0.0f;
@@ -794,6 +795,10 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         rows.push_back(std::move(r));
     };
 
+    // DISP 行：当前显示会话（X11 / Wayland / XWayland / Android / Unknown）。
+    // 型号行稍后会插到 rows 最前面，所以这一行最终落在“型号名正下方”。
+    if (!f.disp_text.empty())
+        add("DISP", kColAccent, std::vector<Span>{Span{f.disp_text, kColValue, row_px}});
     // 型号先不落行：等其它行算完"自然宽度"后再定换行点（两遍布局）
     const std::string model_txt =
         (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
@@ -1607,6 +1612,9 @@ struct Options {
     /** 画面署名文本；留空时用默认署名（见 build()）。
      *  取自 params.custom_text_center，便于用户自定义。 */
     std::string credit;
+    /** DISP 行：当前显示会话（X11 / Wayland / XWayland / Android）。
+     *  由 overlay.cpp 在构建前填充（surface 类型 + 环境变量回退）。 */
+    std::string disp_text;
 };
 
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
@@ -1623,6 +1631,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     // 署名行默认不显示；仅当用户在配置里显式设置 custom_text_center 时才画。
     // GPL-3.0 §7(b) 的署名仍保留在 ATTRIBUTION.md / README 与 mangohud --credits。
     f.credit = o.credit;
+    f.disp_text = o.disp_text;
 
     switch (size) {
         case FusionSize::FULL:    build_full(f, s, c); break;
