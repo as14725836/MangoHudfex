@@ -37,6 +37,7 @@
 #include "amdgpu.h"
 #include "fps_metrics.h"
 #include "net.h"
+#include "winfg.h"
 #include "fex.h"
 #include "ftrace.h"
 #include "fusion_appearance.hpp"
@@ -383,6 +384,8 @@ void update_hud_info_with_frametime(struct swapchain_stats& sw_stats, const stru
 #ifdef HAVE_FEX
    fex::update_fex_stats();
 #endif
+   if (real_params->enabled[OVERLAY_PARAM_ENABLED_win_fg])
+      winfg::update();
 #ifdef HAVE_FTRACE
    if (real_params->ftrace.enabled) {
       if (!FTrace::object)

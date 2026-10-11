@@ -26,6 +26,7 @@
 #include "amdgpu.h"
 #include "fps_metrics.h"
 #include "fex.h"
+#include "winfg.h"
 #include "ftrace.h"
 #include "winesync.h"
 #include "fps_limiter.h"
@@ -905,6 +906,34 @@ void HudElements::fps(){
         ImguiNextColumnOrNewRow();
         HUDElements.TextColored(HUDElements.colors.engine, "%s", HUDElements.sw_stats->engineName.c_str());
     }
+}
+
+void HudElements::win_fg(){
+    if (!HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_win_fg])
+        return;
+
+    // win-fg publishes its counters into shared memory; without a live segment
+    // there is nothing to show (avoids a permanent "N/A" line).
+    if (!winfg::is_available())
+        return;
+
+    ImguiNextColumnFirstItem();
+    HUDElements.TextColored(HUDElements.colors.engine, "%s", "win-fg");
+
+    ImguiNextColumnOrNewRow();
+    if (winfg::is_enabled()) {
+        // Show "real -> real+generated" (e.g. "60->120").
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.0f->%.0f",
+                      winfg::real_fps(), winfg::total_fps());
+        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%s", buf);
+    } else {
+        right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width, "%s", "off");
+    }
+    ImGui::SameLine(0, 1.0f);
+    ImGui::PushFont(HUDElements.sw_stats->font_small);
+    HUDElements.TextColored(HUDElements.colors.text, "FPS");
+    ImGui::PopFont();
 }
 
 void HudElements::fps_only(){
@@ -2009,6 +2038,7 @@ void HudElements::sort_elements(const std::pair<std::string, std::string>& optio
         {"proc_vram", {proc_vram}},
         {"ram", {ram}},
         {"fps", {fps}},
+        {"win_fg", {win_fg}},
         {"gpu_name", {gpu_name}},
         {"frame_timing", {frame_timing}},
         {"media_player", {media_player}},
@@ -2110,6 +2140,8 @@ void HudElements::legacy_elements(const overlay_params* temp_params){
         ordered_functions.push_back({throttling_status, "throttling_status", value});
     if (temp_params->enabled[OVERLAY_PARAM_ENABLED_fps])
         ordered_functions.push_back({fps, "fps", value});
+    if (temp_params->enabled[OVERLAY_PARAM_ENABLED_win_fg])
+        ordered_functions.push_back({win_fg, "win_fg", value});
     for (const auto& pair : options) {
         if (pair.first.find("graphs") != std::string::npos) {
             std::stringstream ss(pair.second);
