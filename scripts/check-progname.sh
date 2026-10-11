@@ -17,6 +17,19 @@ for p in $(ps -eo pid 2>/dev/null | tail -n +2); do
             ;;
     esac
 done | head -100
+
+echo
+echo '== 各进程 maps 里的 exe（磁盘真实文件名）=='
+for p in $(ps -eo pid 2>/dev/null | tail -n +2); do
+    c=$(cat /proc/$p/comm 2>/dev/null || true)
+    case "$c" in
+        *wine*|*Wine*|*exe*|*EXE*|*Exe*|*fex*|*FEX*|*box64*)
+            echo "[$p] comm=$c"
+            awk '{ for (i=1;i<=5;i++) sub(/^[^ ]+ +/,""); print }' /proc/$p/maps 2>/dev/null | grep -i '\.exe' | sort -u | head -10
+            echo
+            ;;
+    esac
+done | head -120
 echo '== wine 配置 =='
 cat "${PREFIX:-/data/data/com.termux/files/usr}/glibc/opt/conf/wine_path.conf" 2>/dev/null | head -5
 echo '== 完（把以上输出发给 AI）==' 

@@ -921,6 +921,7 @@ static std::string fusion_wine_run_mode_text()
 #ifdef __linux__
 #include <cerrno>
 #include <iconv.h>
+#include <fstream>
 
 /** UTF-8 合法性校验 */
 static bool fusion_valid_utf8(const std::string& s)
@@ -1156,6 +1157,63 @@ static bool fusion_comm_is_self_ok(const std::string& c)
          return false;
    return true;
 }
+/** 名字里含 '?'（wine ANSI 转换丢字符时会留下它） */
+static bool fusion_name_lossy(const std::string& s)
+{
+   return s.find('?') != std::string::npos;
+}
+/** 从 /proc/<pid>/maps 的一行里取路径部分（第 6 列起） */
+static std::string fusion_maps_line_path(const std::string& line)
+{
+   size_t i = 0;
+   for (int f = 0; f < 5; ++f) {
+      while (i < line.size() && line[i] == ' ')
+         ++i;
+      while (i < line.size() && line[i] != ' ')
+         ++i;
+   }
+   while (i < line.size() && line[i] == ' ')
+      ++i;
+   std::string p = line.substr(i);
+   if (p.size() >= 10 && p.compare(p.size() - 10, 10, " (deleted)") == 0)
+      p.erase(p.size() - 10);
+   return p;
+}
+/** 扫一份 maps 文本，找主程序 exe 的文件名（磁盘真实名，找不到返回空） */
+static std::string fusion_maps_scan(std::istream& in)
+{
+   std::string line;
+   while (std::getline(in, line)) {
+      std::string p = fusion_maps_line_path(line);
+      if (p.empty())
+         continue;
+      std::string l = p;
+      for (char& c : l)
+         c = (char)std::tolower((unsigned char)c);
+      if (l.size() < 4 || l.compare(l.size() - 4, 4, ".exe") != 0)
+         continue;
+      if (l.find("/windows/") != std::string::npos ||
+          l.find("/system32/") != std::string::npos ||
+          l.find("/syswow64/") != std::string::npos)
+         continue;
+      const size_t sl = p.find_last_of('/');
+      const std::string base = (sl == std::string::npos) ? p : p.substr(sl + 1);
+      if (base.empty() || fusion_sys_exe(base))
+         continue;
+      return base;
+   }
+   return std::string();
+}
+/** 读 /proc/<pid>/maps 找 exe 名（来自文件映射，通常是无损 UTF-8） */
+static std::string fusion_maps_exe_name(int pid)
+{
+   char path[64];
+   std::snprintf(path, sizeof(path), "/proc/%d/maps", pid);
+   std::ifstream f(path);
+   if (!f.good())
+      return std::string();
+   return fusion_maps_scan(f);
+}
 #endif
 static std::string fusion_wine_program_text()
 {
@@ -1165,24 +1223,49 @@ static std::string fusion_wine_program_text()
          if (*e)
             return std::string(e);
       const int self = (int)getpid();
+      std::string fallback; /* 含 '?'（wine 丢字符）的兜底候选 */
+      auto take = [&](const std::string& cand) -> std::string {
+         if (cand.empty())
+            return std::string();
+         std::string r = fusion_fix_encoding(cand);
+         if (r.empty())
+            return std::string();
+         if (!fusion_name_lossy(r))
+            return r;
+         if (fallback.empty())
+            fallback = r;
+         return std::string();
+      };
       const std::string c0 = fusion_read_comm(self);
       {
          std::string l = c0;
          for (char& c : l)
             c = (char)std::tolower((unsigned char)c);
-         if (l.find(".exe") != std::string::npos && !fusion_sys_exe(c0))
-            return fusion_fix_encoding(c0);
+         if (l.find(".exe") != std::string::npos && !fusion_sys_exe(c0)) {
+            std::string r = take(c0);
+            if (!r.empty())
+               return r;
+         }
+      }
+      {
+         /* maps 里是磁盘上的真实文件名（无损 UTF-8），优先于 cmdline 用它 */
+         std::string r = take(fusion_maps_exe_name(self));
+         if (!r.empty())
+            return r;
       }
       {
          std::vector<std::string> args;
          if (fusion_read_cmdline(self, args)) {
-            std::string r = fusion_pick_exe(args);
+            std::string r = take(fusion_pick_exe(args));
             if (!r.empty())
-               return fusion_fix_encoding(r);
+               return r;
          }
       }
-      if (fusion_comm_is_self_ok(c0))
-         return fusion_fix_encoding(c0);
+      if (fusion_comm_is_self_ok(c0)) {
+         std::string r = take(c0);
+         if (!r.empty())
+            return r;
+      }
       int pid = self;
       for (int depth = 0; depth < 8; ++depth) {
          const int pp = fusion_read_ppid(pid);
@@ -1193,17 +1276,27 @@ static std::string fusion_wine_program_text()
             std::string l = cc;
             for (char& c : l)
                c = (char)std::tolower((unsigned char)c);
-            if (l.find(".exe") != std::string::npos && !fusion_sys_exe(cc))
-               return fusion_fix_encoding(cc);
+            if (l.find(".exe") != std::string::npos && !fusion_sys_exe(cc)) {
+               std::string r = take(cc);
+               if (!r.empty())
+                  return r;
+            }
+         }
+         {
+            std::string r = take(fusion_maps_exe_name(pp));
+            if (!r.empty())
+               return r;
          }
          std::vector<std::string> args;
          if (fusion_read_cmdline(pp, args)) {
-            std::string r = fusion_pick_exe(args);
+            std::string r = take(fusion_pick_exe(args));
             if (!r.empty())
-               return fusion_fix_encoding(r);
+               return r;
          }
          pid = pp;
       }
+      if (!fallback.empty())
+         return fallback;
 #endif
       return std::string();
    }();
