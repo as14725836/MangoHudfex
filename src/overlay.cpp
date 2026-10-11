@@ -1303,7 +1303,7 @@ static std::string fusion_wine_program_text()
    static bool logged = false;
    if (!logged) {
       logged = true;
-      SPDLOG_INFO("fusion program name: '{}'", cached);
+      SPDLOG_DEBUG("fusion program name: '{}'", cached);
    }
    return cached;
 }

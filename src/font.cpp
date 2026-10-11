@@ -205,7 +205,7 @@ static std::string fusion_font_path(const overlay_params& params) {
    };
    for (const char* p : kPinFonts) {
       if (is_loadable_ttf(p)) {
-         SPDLOG_INFO("fusion font: pinned font: {}", p);
+         SPDLOG_DEBUG("fusion font: pinned font: {}", p); // 默认隐藏（排查：MANGOHUD_LOG_LEVEL=debug）
          return p;
       }
    }
@@ -218,7 +218,7 @@ static std::string fusion_font_path(const overlay_params& params) {
    };
    for (const char* dir : kUserFontDirs) {
       if (std::string p = first_user_font(dir); !p.empty()) {
-         SPDLOG_INFO("fusion font: user font picked: {}", p);
+         SPDLOG_DEBUG("fusion font: user font picked: {}", p);
          return p;
       }
    }
