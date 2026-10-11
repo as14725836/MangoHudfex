@@ -1403,6 +1403,12 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fusionhud::fr::Sources src;
          src.fps = data.fps > 0.0 ? data.fps : ::fps;
          src.frametime_ms = ::frametime;
+         // win-fg 插帧层统计：真实帧 -> 插帧后总帧（从共享内存读）。
+         if (winfg::is_available() && winfg::is_enabled()) {
+            src.winfg_real  = winfg::real_fps();
+            src.winfg_total = winfg::total_fps();
+            src.winfg_on    = true;
+         }
          src.gpu_name = data.gpuName;
          src.engine_name_str = engine_name(data);
          src.engine_version = data.engineVersion;

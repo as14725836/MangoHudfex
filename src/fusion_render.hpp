@@ -531,6 +531,12 @@ struct Snapshot {
     float low1 = 0.0f, low01 = 0.0f, low001 = 0.0f;
     float ft_min = 0.0f, ft_max = 0.0f;
 
+    // win-fg (Vulkan frame-generation layer) post-interpolation FPS.
+    // real -> real+generated (e.g. 60 -> 120). 0 when unavailable/disabled.
+    float winfg_real = 0.0f;
+    float winfg_total = 0.0f;
+    bool  winfg_on = false;
+
     int cpu_pct = -1, cpu_temp = -1, cpu_mhz = -1;
     int gpu_pct = -1, gpu_temp = -1, gpu_mhz = -1;
     float vram_used = -1.0f;
@@ -560,6 +566,7 @@ struct Chips {
     bool graph = false, low001 = true, clock = true;
     bool gpu_model = true, engine = true;
     bool per_core = true, res = true, wine = true, session = true;
+    bool win_fg = false;
 };
 
 template <class St>
@@ -584,6 +591,7 @@ inline Chips read_chips(const overlay_params& p) {
     c.res       = p.enabled[OVERLAY_PARAM_ENABLED_resolution] != 0;
     c.wine      = p.enabled[OVERLAY_PARAM_ENABLED_wine] != 0;
     c.session   = p.enabled[OVERLAY_PARAM_ENABLED_duration] != 0;
+    c.win_fg    = p.enabled[OVERLAY_PARAM_ENABLED_win_fg] != 0;
     c.low001    = true;
     return c;
 }
@@ -595,6 +603,10 @@ inline Chips read_chips(const overlay_params& p) {
 struct Sources {
     double fps = 0.0;
     double frametime_ms = 0.0;
+    // win-fg (Vulkan frame-generation layer) post-interpolation FPS.
+    double winfg_real = 0.0;
+    double winfg_total = 0.0;
+    bool   winfg_on = false;
     std::string gpu_name, engine_name_str, engine_version, driver_name;
     int gpu_load = -1, gpu_temp = -1, gpu_core_clock = -1;
     float vram_used_gib = -1.0f;
@@ -621,6 +633,10 @@ inline Snapshot make_snapshot(const Sources& s) {
     o.low001 = low_fps(0.0001f);
     o.ft_min = ft_min_ms();
     o.ft_max = ft_max_ms();
+
+    o.winfg_real  = static_cast<float>(s.winfg_real);
+    o.winfg_total = static_cast<float>(s.winfg_total);
+    o.winfg_on    = s.winfg_on;
 
     o.gpu_pct = s.gpu_load;
     o.gpu_temp = s.gpu_temp;
@@ -967,6 +983,18 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         // add("0.1%", kColLo, num_unit_f(s.low01, "FPS", row_px, unit_px));
         // if (c.low001)
         //     add("0.01%", kColLo, num_unit_f(s.low001, "FPS", row_px, unit_px));
+    }
+
+    // win-fg（Vulkan 插帧层）：真实帧 -> 插帧后总帧，例如 "60 -> 120"。
+    // 只有 win-fg 层在跑且暴露了共享内存计数时才显示这一行。
+    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.0f→%.0f", s.winfg_real, s.winfg_total);
+        std::vector<Span> v;
+        v.push_back(Span{buf, kColNum, row_px});
+        v.push_back(gap(unit_px));
+        v.push_back(Span{"FPS", kColUnit, unit_px});
+        add(hud_i18n::tr("win-fg"), kColFps, std::move(v));
     }
 
     // 运行模式：放在最下面一行（型号行稍后会插到最前面）。溯源：
