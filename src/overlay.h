@@ -45,6 +45,7 @@ struct FusionFonts {
    ImFont* big = nullptr;     // sp(34) ≈ 51px
    ImFont* mid = nullptr;     // sp(18) ≈ 27px
    ImFont* small = nullptr;   // sp(12) ≈ 18px
+   ImFont* cjk = nullptr;     // 全字库 fallback（动态文本）
 };
 
 struct swapchain_stats {

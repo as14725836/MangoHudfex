@@ -1474,6 +1474,7 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fo.font = data.font_fusion.big ? data.font_fusion.big : ImGui::GetFont();
          fo.font_mid = data.font_fusion.mid ? data.font_fusion.mid : fo.font;
          fo.font_small = data.font_fusion.small ? data.font_fusion.small : fo.font;
+         fo.font_cjk = data.font_fusion.cjk ? data.font_fusion.cjk : nullptr;
          // 面板描边强度：fusion_outline（默认 1.0 → 约 3.5px），0 = 不描边。
          fo.outline = real_params->fusion_outline > 0.0f ? real_params->fusion_outline : 0.0f;
          fo.disp_text = fusion_display_server_text();

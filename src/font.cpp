@@ -409,8 +409,6 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    // 而 FusionHUD 只会画 ASCII + ° · — ↓。
    // FHUD 的 glyph ranges：Latin-1 + 符号 + 中文化标签用到的汉字。
    // 汉字按需添加（只有几十个字形），所以 51px 下也不会把图集撑爆。
-   ImVector<ImWchar> fusion_ranges_vec;
-   {
       static const ImWchar fusion_base[] = {
          0x0020, 0x00FF,   // Latin-1（含 ° · ² 等）
          0x2013, 0x2014,   // – —
@@ -428,6 +426,8 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
          0x2264, 0x2265,   // ≤ ≥
          0,
       };
+   ImVector<ImWchar> fusion_ranges_vec;
+   {
       ImFontGlyphRangesBuilder fusion_builder;
       fusion_builder.AddRanges(fusion_base);
       const std::string zh_f = hud_i18n::zh_all_glyphs();
@@ -530,6 +530,42 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
       } else {
          secondary_font = font_atlas->AddFontFromMemoryCompressedBase85TTF(ttf_compressed_base85, font_size_secondary, nullptr, glyph_ranges.Data);
          font_atlas->AddFontFromMemoryCompressedBase85TTF(forkawesome_compressed_data_base85, font_size_secondary, &config, icon_ranges);
+      }
+   }
+
+   // ---- 全字库 fallback（动态文本：程序名/设备名等可能含任意汉字） ----
+   // 三档字体只烘焙了标签用字（~90 个），游戏名里的其它汉字会被 ImGui 画成 '?'。
+   // 这里额外烘焙一份完整中日字库（~2.2 万字，~1.8s，Alpha8 ~23MB）：
+   // 只有当文本含“三档字库外的字”时才会用到它 —— 常见文本观感不变。
+   // 关闭：MANGOHUD_FUSION_CJK=0
+   {
+      const char* cjk_off = std::getenv("MANGOHUD_FUSION_CJK");
+      if (!(cjk_off && cjk_off[0] == '0')) {
+         float cjk_px = size_mid;
+         if (cjk_px > 34.0f)
+            cjk_px = 34.0f;
+         if (cjk_px < 24.0f)
+            cjk_px = 24.0f;
+         static const ImWchar fusion_extra[] = {
+            0x2460, 0x24FF,   // ① Ⓐ …
+            0x25A0, 0x25FF,   // ■ ● ▲ …
+            0x2600, 0x27BF,   // ★ ☆ ♠ ♥ …
+            0x2E80, 0x2EFF,   // CJK 部首
+            0xF900, 0xFAFF,   // CJK 兼容
+            0xFE30, 0xFE4F,   // CJK 兼容标点
+            0,
+         };
+         ImVector<ImWchar> cjk_ranges_vec;
+         ImFontGlyphRangesBuilder cjk_builder;
+         cjk_builder.AddRanges(fusion_base);
+         cjk_builder.AddRanges(font_atlas->GetGlyphRangesChineseFull());
+         cjk_builder.AddRanges(fusion_extra);
+         cjk_builder.BuildRanges(&cjk_ranges_vec);
+         ImFontConfig cjk_cfg = fusion_config;
+         cjk_cfg.OversampleH = 1;   // 全字库用 1× 横采样：控图集体积
+         cjk_cfg.GlyphExtraSpacing.x = cjk_px * fusionhud::kTrackingEm;
+         if (!fusion_ttf.empty())
+            fusion.cjk = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), cjk_px, &cjk_cfg, cjk_ranges_vec.Data);
       }
    }
 

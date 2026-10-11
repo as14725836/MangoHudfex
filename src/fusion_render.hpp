@@ -37,6 +37,7 @@
 #include <cstdlib>   // getenv（发光开关）
 #include <ctime>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "overlay_params.h"
@@ -207,10 +208,72 @@ struct Tile {
  *  FusionHUD 的 sp 会乘手机密度，直接照搬到 HUD 上显得过于空；0.75 收紧后更贴身。 */
 inline constexpr float kGapScale = 0.78f;
 
+/** fusion_base 里已烘焙的符号判定（2022~2265） */
+inline bool fusion_cp_in_base(unsigned int cp) {
+    return (cp >= 0x2013 && cp <= 0x2014) || (cp >= 0x2018 && cp <= 0x201F) ||
+           cp == 0x2022 || cp == 0x2026 || cp == 0x2030 || cp == 0x20AC ||
+           cp == 0x2103 || cp == 0x2109 || cp == 0x2116 || cp == 0x2122 ||
+           (cp >= 0x2190 && cp <= 0x2193) || cp == 0x221E ||
+           (cp >= 0x2264 && cp <= 0x2265);
+}
+/** 单个码点是否已被三档字体（Latin-1 + fusion_base + 标签汉字）覆盖 */
+inline bool fusion_cp_covered(unsigned int cp) {
+    if (cp <= 0xFF)
+        return true;
+    if (fusion_cp_in_base(cp))
+        return true;
+    static const std::unordered_set<unsigned int> known = [] {
+        std::unordered_set<unsigned int> s;
+        const std::string z = hud_i18n::zh_all_glyphs();
+        for (size_t i = 0; i < z.size();) {
+            const unsigned char c = static_cast<unsigned char>(z[i]);
+            if (c < 0x80) { ++i; continue; }
+            unsigned int v = 0;
+            int extra = 0;
+            if ((c & 0xE0) == 0xC0) { v = c & 0x1F; extra = 1; }
+            else if ((c & 0xF0) == 0xE0) { v = c & 0x0F; extra = 2; }
+            else if ((c & 0xF8) == 0xF0) { v = c & 0x07; extra = 3; }
+            else { ++i; continue; }
+            if (i + extra >= z.size())
+                break;
+            for (int k = 1; k <= extra; ++k)
+                v = (v << 6) | (static_cast<unsigned char>(z[i + k]) & 0x3F);
+            i += extra + 1;
+            s.insert(v);
+        }
+        return s;
+    }();
+    return known.find(cp) != known.end();
+}
+/** 文本是否含“三档字库外”的字符：是 → 用全字库 fallback 字体绘制 */
+inline bool fusion_text_needs_cjk(const std::string& t) {
+    for (size_t i = 0; i < t.size();) {
+        const unsigned char c = static_cast<unsigned char>(t[i]);
+        if (c < 0x80) { ++i; continue; }
+        unsigned int v = 0;
+        int extra = 0;
+        if ((c & 0xE0) == 0xC0) { v = c & 0x1F; extra = 1; }
+        else if ((c & 0xF0) == 0xE0) { v = c & 0x0F; extra = 2; }
+        else if ((c & 0xF8) == 0xF0) { v = c & 0x07; extra = 3; }
+        else { ++i; continue; }
+        if (i + extra >= t.size())
+            return true;
+        for (int k = 1; k <= extra; ++k)
+            v = (v << 6) | (static_cast<unsigned char>(t[i + k]) & 0x3F);
+        i += extra + 1;
+        if (v > 0xFFFF)
+            return true;
+        if (!fusion_cp_covered(v))
+            return true;
+    }
+    return false;
+}
+
 struct Metrics {
     ImFont* font = nullptr;        // 大号
     ImFont* font_mid = nullptr;    // 中号
     ImFont* font_small = nullptr;  // 小号
+    ImFont* font_cjk = nullptr;    // 全字库 fallback（动态文本用）
     float spk = kSpToPx;   // sp → px 基准
     float scale = 1.0f;    // hudScale（本实现复用 params->font_scale）
 
@@ -230,6 +293,12 @@ struct Metrics {
         }
         return best;
     }
+    /** 文本版挑字体：含三档字库外的字 → 全字库 fallback（缺失字形不再变 '?'） */
+    ImFont* pick_for(const std::string& t, float px) const {
+        if (font_cjk && fusion_text_needs_cjk(t))
+            return font_cjk;
+        return pick(px);
+    }
 
     float sp(float v) const { return v * spk * scale; }
 
@@ -237,7 +306,7 @@ struct Metrics {
     float gsp(float v) const { return v * spk * scale * kGapScale; }
 
     float measure(const std::string& t, float px) const {
-        ImFont* f = pick(px);
+        ImFont* f = pick_for(t, px);
         if (!f || t.empty())
             return 0.0f;
         return f->CalcTextSizeA(px, FLT_MAX, 0.0f, t.c_str(), t.c_str() + t.size()).x;
@@ -1626,6 +1695,7 @@ struct Options {
     ImFont* font = nullptr;       // 大号（按 sp(34) 烘焙）
     ImFont* font_mid = nullptr;   // 中号（按 sp(18) 烘焙）
     ImFont* font_small = nullptr; // 小号（按 sp(12) 烘焙）
+    ImFont* font_cjk = nullptr;   // 全字库 fallback（动态文本用）
     /** 画面署名文本；留空时用默认署名（见 build()）。
      *  取自 params.custom_text_center，便于用户自定义。 */
     std::string credit;
@@ -1649,6 +1719,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.M.font = o.font;
     f.M.font_mid = o.font_mid ? o.font_mid : o.font;
     f.M.font_small = o.font_small ? o.font_small : o.font;
+    f.M.font_cjk = o.font_cjk;
     f.M.scale = o.scale;
     // 署名行默认不显示；仅当用户在配置里显式设置 custom_text_center 时才画。
     // GPL-3.0 §7(b) 的署名仍保留在 ATTRIBUTION.md / README 与 mangohud --credits。
@@ -1816,12 +1887,12 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
         // 先画一层深色投影（偏移随字号等比）：白字更"实"，
         // 面板是半透明的，亮场景下也能压得住、不会显得发浅。
         const float sh = std::max(1.0f, std::floor(g.px * 0.055f));
-        dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x + sh, o.y + g.top + sh),
+        dl->AddText(f.M.pick_for(g.text, g.px), g.px, ImVec2(o.x + g.x + sh, o.y + g.top + sh),
                     to_imcol(0xC6000000u), g.text.c_str(), g.text.c_str() + g.text.size());
         // 发光（深色发亮）：同一字形先用本色提亮的半透明拷贝往外铺两圈，
         // 再把本色盖上去 —— 看起来就是字在发光的“灯管”效果。
         if (fusion_glow_enabled()) {
-            ImFont* gf = f.M.pick(g.px);
+            ImFont* gf = f.M.pick_for(g.text, g.px);
             const char* gs = g.text.c_str();
             const char* ge = gs + g.text.size();
             const float r1 = std::max(1.0f, std::floor(g.px * 0.05f));
@@ -1837,7 +1908,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
                 dl->AddText(gf, g.px, ImVec2(o.x + g.x + d.x, o.y + g.top + d.y),
                             to_imcol(c_in), gs, ge);
         }
-        dl->AddText(f.M.pick(g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
+        dl->AddText(f.M.pick_for(g.text, g.px), g.px, ImVec2(o.x + g.x, o.y + g.top), to_imcol(g.col),
                     g.text.c_str(), g.text.c_str() + g.text.size());
     }
 
