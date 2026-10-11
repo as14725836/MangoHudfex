@@ -10,21 +10,36 @@
 #include "overlay.h"
 #include "hud_elements.h"
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <unistd.h>
-#include <signal.h>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
 #include <chrono>
 #include <atomic>
 #include <vector>
 #include <string>
 
 #include "spdlog/spdlog.h"
+
+#ifdef _WIN32
+// Windows build: win-fg is a Linux/Android/Termux layer and does not run here,
+// so the stats reader is a no-op (always unavailable). The HUD element simply
+// never renders.
+namespace winfg {
+bool is_available() { return false; }
+bool is_enabled() { return false; }
+double real_fps()  { return 0.0; }
+double gen_fps()   { return 0.0; }
+double total_fps() { return 0.0; }
+void update() {}
+}
+#else
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <signal.h>
+#include <cerrno>
 
 namespace winfg {
 
@@ -298,3 +313,5 @@ void update() {
 }
 
 } // namespace winfg
+
+#endif // _WIN32
