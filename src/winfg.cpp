@@ -52,10 +52,15 @@ struct Global {
     int             pid = -1;
     bool            available = false;
 
-    // FPS estimation state.
+    // FPS estimation state: accumulate counters over a fixed sampling
+    // window (default 500ms, mirroring MangoHud's fps_sampling_period) so the
+    // displayed rate is stable instead of jittering every frame.
     uint64_t        last_real = 0;
     uint64_t        last_gen  = 0;
     uint64_t        last_ns   = 0;
+    uint64_t        win_start_real = 0;
+    uint64_t        win_start_gen  = 0;
+    uint64_t        win_start_ns   = 0;
     double          real_rate = 0.0;
     double          gen_rate  = 0.0;
     bool            enabled_flag = false;
@@ -292,24 +297,34 @@ void update() {
         g.last_real = real;
         g.last_gen  = gen;
         g.last_ns   = ns;
+        g.win_start_real = real;
+        g.win_start_gen  = gen;
+        g.win_start_ns   = ns;
         return;
     }
 
-    // Compute rates from the deltas. Guard against backward/zero deltas
-    // (counter wrap, process restart, or a stale timestamp).
-    if (ns > g.last_ns) {
-        const double dt_s = (double)(ns - g.last_ns) / 1e9;
-        const uint64_t dreal = (real >= g.last_real) ? (real - g.last_real) : 0;
-        const uint64_t dgen  = (gen  >= g.last_gen)  ? (gen  - g.last_gen)  : 0;
+    // Accumulate counters over a fixed sampling window. Only publish a new
+    // rate once the window has elapsed, so the displayed value is stable
+    // (default 500ms, matching MangoHud's fps_sampling_period).
+    g.last_real = real;
+    g.last_gen  = gen;
+    g.last_ns   = ns;
+
+    const uint64_t win_ns = ns - g.win_start_ns;
+    static const uint64_t kSampleNs = 500000000ull;  // 500ms
+    if (win_ns >= kSampleNs) {
+        const double dt_s = (double)win_ns / 1e9;
+        const uint64_t dreal = (real >= g.win_start_real) ? (real - g.win_start_real) : 0;
+        const uint64_t dgen  = (gen  >= g.win_start_gen)  ? (gen  - g.win_start_gen)  : 0;
         if (dt_s > 0.0) {
             g.real_rate = (double)dreal / dt_s;
             g.gen_rate  = (double)dgen  / dt_s;
         }
+        // Reset the window for the next sample.
+        g.win_start_real = real;
+        g.win_start_gen  = gen;
+        g.win_start_ns   = ns;
     }
-
-    g.last_real = real;
-    g.last_gen  = gen;
-    g.last_ns   = ns;
 }
 
 } // namespace winfg
