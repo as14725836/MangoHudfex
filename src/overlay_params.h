@@ -141,6 +141,7 @@ struct Tracepoint;
    OVERLAY_PARAM_BOOL(fusion_minimal)                \
    OVERLAY_PARAM_BOOL(fusion_mega)                   \
    OVERLAY_PARAM_CUSTOM(fusion_outline)              \
+   OVERLAY_PARAM_CUSTOM(fusion_scale)                \
    OVERLAY_PARAM_BOOL(gl_hud_bind_default_fb)       \
    OVERLAY_PARAM_CUSTOM(fps_sampling_period)         \
    OVERLAY_PARAM_CUSTOM(output_folder)               \
@@ -309,6 +310,7 @@ struct overlay_params {
    int offset_x, offset_y;
    float round_corners;
    float fusion_outline;   // FusionHUD 面板描边强度（× sp(3.5)）；默认 1.0，0 = 不描边
+   float fusion_scale;    // FHUD 整体等比例缩放；默认 1.0（快捷键 Shift+加号/减号 ±10%/步）
    unsigned vsync;
    std::string vulkan_present_mode;
    std::optional<VkPresentModeKHR> m_vulkan_present_mode;
@@ -336,6 +338,8 @@ struct overlay_params {
    float background_alpha, alpha;
    float cellpadding_y;
    std::vector<KeySym> toggle_hud;
+   std::vector<KeySym> zoom_in;
+   std::vector<KeySym> zoom_out;
    std::vector<KeySym> toggle_preset;
    std::vector<KeySym> toggle_fps_limit;
    std::vector<KeySym> toggle_logging;

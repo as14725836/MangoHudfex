@@ -650,6 +650,7 @@ parse_ftrace(const char *str) {
 #define parse_background_alpha(s) parse_float(s)
 #define parse_alpha(s) parse_float(s)
 #define parse_fusion_outline(s) parse_float(s)
+#define parse_fusion_scale(s) parse_float(s)
 #define parse_permit_upload(s) parse_unsigned(s)
 #define parse_no_small_font(s) parse_unsigned(s) != 0
 #define parse_cellpadding_y(s) parse_float(s)
@@ -1005,6 +1006,7 @@ static void set_param_defaults(struct overlay_params *params){
    params->fps_value = { 30, 60 };
    params->round_corners = 0;
    params->fusion_outline = 0.0f;   // 面板描边强度：0 = 不画紫边（默认）；1.0 → 约 3.5px
+   params->fusion_scale = 1.0f;    // FHUD 整体缩放（1.0 = 100%）
    params->battery_color =0xff9078;
    params->fsr_steam_sharpness = -1;
    params->picmip = -17;
@@ -1056,6 +1058,8 @@ parse_overlay_config(struct overlay_params *params,
 
 #if defined(HAVE_X11) || defined(HAVE_WAYLAND)
    params->toggle_hud = { XKB_KEY_Shift_R, XKB_KEY_F12 };
+   params->zoom_in = { XKB_KEY_Shift_R, XKB_KEY_plus };
+   params->zoom_out = { XKB_KEY_Shift_R, XKB_KEY_minus };
    params->toggle_hud_position = { XKB_KEY_Shift_R, XKB_KEY_F11 };
    params->toggle_preset = { XKB_KEY_Shift_R, XKB_KEY_F10 };
    params->reset_fps_metrics = { XKB_KEY_Shift_R, XKB_KEY_F9};
@@ -1068,6 +1072,8 @@ parse_overlay_config(struct overlay_params *params,
 
 #ifdef _WIN32
    params->toggle_hud = { VK_F12 };
+   params->zoom_in = { VK_OEM_PLUS };
+   params->zoom_out = { VK_OEM_MINUS };
    params->toggle_preset = { VK_F10 };
    params->reset_fps_metrics = { VK_F9};
    params->toggle_fps_limit = { VK_F3 };

@@ -11,7 +11,7 @@
 #include "fps_metrics.h"
 #include "fps_limiter.h"
 
-Clock::time_point last_f2_press, toggle_fps_limit_press, toggle_preset_press, last_f12_press, reload_cfg_press, last_upload_press;
+Clock::time_point last_f2_press, toggle_fps_limit_press, toggle_preset_press, last_f12_press, reload_cfg_press, last_upload_press, zoom_press;
 
 void check_keybinds(struct overlay_params& params){
    auto real_params = get_params();
@@ -23,6 +23,7 @@ void check_keybinds(struct overlay_params& params){
    auto elapsedF12 = now - last_f12_press;
    auto elapsedReloadCfg = now - reload_cfg_press;
    auto elapsedUpload = now - last_upload_press;
+   auto elapsedZoom = now - zoom_press;
 
    static Clock::time_point last_check;
    if (now - last_check < 100ms)
@@ -65,6 +66,20 @@ void check_keybinds(struct overlay_params& params){
        keys_are_pressed(real_params->toggle_hud)) {
       last_f12_press = now;
       real_params->no_display = !real_params->no_display;
+   }
+   if (elapsedZoom >= 250ms) {
+      bool zoomed = false;
+      if (keys_are_pressed(real_params->zoom_in)) {
+         real_params->fusion_scale = std::min(4.0f, real_params->fusion_scale * 1.1f);
+         zoomed = true;
+      } else if (keys_are_pressed(real_params->zoom_out)) {
+         real_params->fusion_scale = std::max(0.35f, real_params->fusion_scale / 1.1f);
+         zoomed = true;
+      }
+      if (zoomed) {
+         zoom_press = now;
+         SPDLOG_INFO("fhud scale -> {:.2f}", real_params->fusion_scale);
+      }
    }
 
    if (elapsedReloadCfg >= keyPressDelay &&

@@ -1257,7 +1257,8 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fusionhud::fr::note_graph_sample(static_cast<float>(src.frametime_ms));
 
          fusionhud::fr::Options fo;
-         fo.scale = real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f;
+         fo.scale = (real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f)
+                  * (real_params->fusion_scale > 0.0f ? real_params->fusion_scale : 1.0f);
          // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
          // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
          // 三档字体（见 font.cpp）：ImGui 放大绘制会发虚、缩小绘制会变软，
