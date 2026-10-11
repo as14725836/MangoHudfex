@@ -919,6 +919,120 @@ static std::string fusion_wine_run_mode_text()
  * 命中后取文件名（去掉 wine 路径前缀）；探测不到返回空（整行隐藏）。
  */
 #ifdef __linux__
+#include <cerrno>
+#include <iconv.h>
+
+/** UTF-8 合法性校验 */
+static bool fusion_valid_utf8(const std::string& s)
+{
+   const unsigned char* p = reinterpret_cast<const unsigned char*>(s.data());
+   const unsigned char* end = p + s.size();
+   while (p < end) {
+      const unsigned char c = *p++;
+      if (c < 0x80)
+         continue;
+      int n = 0;
+      if ((c & 0xE0) == 0xC0) { n = 1; if ((c & 0x1F) < 2) return false; }
+      else if ((c & 0xF0) == 0xE0) { n = 2; }
+      else if ((c & 0xF8) == 0xF0) { n = 3; }
+      else return false;
+      if (p + n > end) return false;
+      for (int i = 0; i < n; ++i) {
+         if ((*p & 0xC0) != 0x80) return false;
+         ++p;
+      }
+   }
+   return true;
+}
+/** iconv -> UTF-8；失败（含非法序列）返回空串 */
+static std::string fusion_iconv(const std::string& in, const char* from)
+{
+   iconv_t cd = iconv_open("UTF-8", from);
+   if (cd == (iconv_t)-1)
+      return std::string();
+   std::string out(in.size() * 2 + 8, (char)0);
+   char* inbuf = const_cast<char*>(in.data());
+   size_t inleft = in.size();
+   size_t done = 0;
+   bool bad = false;
+   while (inleft > 0) {
+      char* ob = out.data() + done;
+      size_t ol = out.size() - done;
+      const size_t r = iconv(cd, &inbuf, &inleft, &ob, &ol);
+      done = (size_t)(ob - out.data());
+      if (r == (size_t)-1) {
+         if (errno == E2BIG) {
+            out.resize(out.size() * 2);
+            continue;
+         }
+         bad = true;
+         break;
+      }
+   }
+   iconv_close(cd);
+   if (bad)
+      return std::string();
+   out.resize(done);
+   return out;
+}
+/** 统计全角假名（U+3040-30FF）数量：日文文本判别信号 */
+static int fusion_count_kana(const std::string& s)
+{
+   int n = 0;
+   const unsigned char* p = reinterpret_cast<const unsigned char*>(s.data());
+   const unsigned char* end = p + s.size();
+   while (p < end) {
+      const unsigned char c = *p;
+      if (c < 0x80) { ++p; continue; }
+      int len = 0;
+      unsigned int cp = 0;
+      if ((c & 0xE0) == 0xC0) { len = 1; cp = c & 0x1F; }
+      else if ((c & 0xF0) == 0xE0) { len = 2; cp = c & 0x0F; }
+      else if ((c & 0xF8) == 0xF0) { len = 3; cp = c & 0x07; }
+      else { ++p; continue; }
+      if (p + len >= end)
+         break;
+      bool ok = true;
+      for (int i = 1; i <= len; ++i) {
+         if ((p[i] & 0xC0) != 0x80) { ok = false; break; }
+         cp = (cp << 6) | (p[i] & 0x3F);
+      }
+      if (ok && cp >= 0x3040 && cp <= 0x30FF)
+         ++n;
+      p += len + 1;
+   }
+   return n;
+}
+/** 非 UTF-8 时按常见东亚编码转 UTF-8；否则原样返回 */
+static std::string fusion_fix_encoding(const std::string& raw)
+{
+   if (raw.empty() || fusion_valid_utf8(raw))
+      return raw;
+   static const char* kEnc[] = { "GB18030", "GBK", "SHIFT-JIS", "CP932", "BIG5", "EUC-JP", "EUC-KR" };
+   std::string first, gb, alt;
+   for (const char* e : kEnc) {
+      std::string r = fusion_iconv(raw, e);
+      if (r.empty())
+         continue;
+      if (first.empty())
+         first = r;
+      const std::string en = e;
+      if (en == "GB18030" || en == "GBK") {
+         if (gb.empty())
+            gb = r;
+      } else if (alt.empty()) {
+         alt = r;
+      }
+   }
+   // 日文判别：GB 系解成纯汉字、而其它编码解出全角假名 → 判为非 GB 编码
+   if (!gb.empty() && !alt.empty() && fusion_count_kana(gb) == 0 && fusion_count_kana(alt) > 0)
+      return alt;
+   if (!first.empty())
+      return first;
+   return raw;
+}
+
+
 static bool fusion_read_cmdline(int pid, std::vector<std::string>& out)
 {
    char path[64];
@@ -1057,18 +1171,18 @@ static std::string fusion_wine_program_text()
          for (char& c : l)
             c = (char)std::tolower((unsigned char)c);
          if (l.find(".exe") != std::string::npos && !fusion_sys_exe(c0))
-            return c0;
+            return fusion_fix_encoding(c0);
       }
       {
          std::vector<std::string> args;
          if (fusion_read_cmdline(self, args)) {
             std::string r = fusion_pick_exe(args);
             if (!r.empty())
-               return r;
+               return fusion_fix_encoding(r);
          }
       }
       if (fusion_comm_is_self_ok(c0))
-         return c0;
+         return fusion_fix_encoding(c0);
       int pid = self;
       for (int depth = 0; depth < 8; ++depth) {
          const int pp = fusion_read_ppid(pid);
@@ -1080,13 +1194,13 @@ static std::string fusion_wine_program_text()
             for (char& c : l)
                c = (char)std::tolower((unsigned char)c);
             if (l.find(".exe") != std::string::npos && !fusion_sys_exe(cc))
-               return cc;
+               return fusion_fix_encoding(cc);
          }
          std::vector<std::string> args;
          if (fusion_read_cmdline(pp, args)) {
             std::string r = fusion_pick_exe(args);
             if (!r.empty())
-               return r;
+               return fusion_fix_encoding(r);
          }
          pid = pp;
       }
@@ -1100,6 +1214,7 @@ static std::string fusion_wine_program_text()
    }
    return cached;
 }
+
 
 
 /**
