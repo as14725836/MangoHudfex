@@ -904,7 +904,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     // $PREFIX/glibc/opt/conf/wine_path.conf → WINE_PATH → lib/wine/{aarch64,x86_64}-windows
     if (!f.run_mode_text.empty())
         add(hud_i18n::tr("Run Mode"), kColAccent,
-            std::vector<Span>{Span{f.run_mode_text, kColInfo, row_px}});
+            std::vector<Span>{Span{f.run_mode_text, kColRun, row_px}});
 
     // 程序名：wine 打开的程序（game.exe …），排在最下面（在“运行模式”之后再往下一行）
     if (!f.prog_text.empty())
