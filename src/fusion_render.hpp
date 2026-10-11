@@ -1003,7 +1003,7 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%.0f→%.0f", s.winfg_real, s.winfg_total);
         std::vector<Span> v;
-        v.push_back(Span{buf, kColNum, row_px});
+        v.push_back(Span{buf, 0xFFBFFF66, row_px});
         v.push_back(gap(unit_px));
         v.push_back(Span{"FPS", kColUnit, unit_px});
         // 标签色 #e5d94d（黄），与 FPS 红 / 其它标签区分开。
