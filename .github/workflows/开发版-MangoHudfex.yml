@@ -171,7 +171,8 @@ jobs:
           cd ..
           echo "版本: ${{ env.VERSION }} / 提交: ${{ env.LATEST_COMMIT_SHORT }} / with_fex=ON" > mangohud/build/release/BUILD_INFO.txt
           TAR_FILE="termux-glibc-mangohudfex-dev-${{ env.VERSION }}.tar.gz"
-          tar -czvf $TAR_FILE -C mangohud/build/release .
+          tar -cf - -C mangohud/build/release . | gzip -9n > "$TAR_FILE"
+          ls -lh "$TAR_FILE"
 
           echo "TAR_FILE=$TAR_FILE" >> $GITHUB_ENV
           echo "✅ 打包完成: $TAR_FILE"

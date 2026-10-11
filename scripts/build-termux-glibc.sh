@@ -87,6 +87,15 @@ if [ -d .git ] && git submodule status --recursive 2>/dev/null | grep -q '^-'; t
 fi
 
 # ---------------- 1. 配置 ----------------
+# —— 体积优化（发布版默认开启；LTO=0 可关）——
+# LTO + 函数级 GC + -O2：显著减小二进制；若出问题可 LTO=0 回退。
+SIZE_OPTS=()
+if [ "${LTO:-1}" != "0" ] && [ "$BUILDTYPE" = "release" ]; then
+    export CFLAGS="${CFLAGS:-} -ffunction-sections -fdata-sections"
+    export CXXFLAGS="${CXXFLAGS:-} -ffunction-sections -fdata-sections"
+    export LDFLAGS="${LDFLAGS:-} -Wl,--gc-sections"
+    SIZE_OPTS=(-Db_lto=true -Doptimization=2)
+fi
 MESON_OPTS=(
     --prefix="$PREFIX"
     --libdir="$LIBDIR"
@@ -102,6 +111,7 @@ MESON_OPTS=(
     -Dmangohudctl=false
     -Dinclude_doc=false
     -Dtests=disabled
+    "${SIZE_OPTS[@]}"
 )
 
 log "meson setup ($BUILD_DIR)"
@@ -174,7 +184,7 @@ VER="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 ARCH="$(uname -m)"
 TARBALL="${DIST_DIR}/termux-glibc-mangohudfex-${VER}-${ARCH}.tar.gz"
 log "打包 -> $TARBALL"
-tar -czf "$TARBALL" -C "$DESTDIR_ABS" .
+tar -cf - -C "$DESTDIR_ABS" . | gzip -9n > "$TARBALL"
 
 # ---------------- 8. 可选安装 ----------------
 if [ "$DO_INSTALL" -eq 1 ]; then
