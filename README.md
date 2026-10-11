@@ -469,6 +469,7 @@ Parameters that are enabled by default have to be explicitly disabled. These (cu
 | `vulkan_present_mode=<name>`       | Override Vulkan [present mode](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html) using specified mode name (takes precedence over `vsync=`) |
 | `vulkan_driver`                    | Display used Vulkan driver (radv/amdgpu-pro/amdvlk)                                   |
 | `width=`<br>`height=`              | Customizable HUD dimensions (in pixels)                                              |
+| `win_fg`                           | Display the win-fg (Vulkan frame generation layer) frame rate as `real->total` (e.g. `60->120`) |
 | `wine_color`                       | Change color of the wine/proton text                                                  |
 | `wine`                             | Show current Wine or Proton version in use                                            |
 | `winesync`                         | Show wine sync method in use                                                          |
@@ -762,6 +763,7 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
 | `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
 | `fusion_outline` | 面板描边强度，浮点，**默认 `0`（不画紫边）**；设为 `1.0` ≈ 3.5px |
+| `fusion_scale` | FHUD 整体等比例缩放，浮点，默认 `1.0`（快捷键 Shift+加号/减号 ±10%/步） |
 | `gl_hud_bind_default_fb` | OpenGL(GL/GLX) 路径下把 HUD 画到窗口默认帧缓冲（而非应用当前的 FBO），**默认关闭**；Wine + Mesa 下 HUD 闪烁时可开启 |
 
 ### FEX-Emu 统计（`fex_stats`）的共享内存路径
