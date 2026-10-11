@@ -985,18 +985,6 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         //     add("0.01%", kColLo, num_unit_f(s.low001, "FPS", row_px, unit_px));
     }
 
-    // win-fg（Vulkan 插帧层）：真实帧 -> 插帧后总帧，例如 "60 -> 120"。
-    // 只有 win-fg 层在跑且暴露了共享内存计数时才显示这一行。
-    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.0f→%.0f", s.winfg_real, s.winfg_total);
-        std::vector<Span> v;
-        v.push_back(Span{buf, kColNum, row_px});
-        v.push_back(gap(unit_px));
-        v.push_back(Span{"FPS", kColUnit, unit_px});
-        add(hud_i18n::tr("win-fg"), kColFps, std::move(v));
-    }
-
     // 运行模式：放在最下面一行（型号行稍后会插到最前面）。溯源：
     // $PREFIX/glibc/opt/conf/wine_path.conf → WINE_PATH → lib/wine/{aarch64,x86_64}-windows
     if (!f.run_mode_text.empty())
@@ -1007,6 +995,20 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     if (!f.prog_text.empty())
         add(hud_i18n::tr("Program"), kColAccent,
             std::vector<Span>{Span{f.prog_text, kColProg, row_px}});
+
+    // win-fg（Vulkan 插帧层）：真实帧 -> 插帧后总帧，例如 "60 → 120"。
+    // 只有 win-fg 层在跑且暴露了共享内存计数时才显示这一行；
+    // 放在“程序”行下面（最底部，型号行稍后仍会插到最前面）。
+    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.0f→%.0f", s.winfg_real, s.winfg_total);
+        std::vector<Span> v;
+        v.push_back(Span{buf, kColNum, row_px});
+        v.push_back(gap(unit_px));
+        v.push_back(Span{"FPS", kColUnit, unit_px});
+        // 标签色 #e5d94d（黄），与 FPS 红 / 其它标签区分开。
+        add(hud_i18n::tr("win-fg"), 0xFFE5D94D, std::move(v));
+    }
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
