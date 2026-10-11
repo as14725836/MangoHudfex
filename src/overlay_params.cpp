@@ -1228,6 +1228,19 @@ parse_overlay_config(struct overlay_params *params,
       } catch(...) {}
    }
 
+   // FHUD：专用环境变量直接控制整面板缩放（示例 MANGOHUD_FUSION_SCALE=1.5；优先级最高）
+   if (const char *fusion_scale_env = getenv("MANGOHUD_FUSION_SCALE"))
+   {
+      if (*fusion_scale_env)
+      {
+         try {
+            float fusion_scale_v = std::stof(fusion_scale_env);
+            if (fusion_scale_v > 0.0f)
+               params->fusion_scale = fusion_scale_v;
+         } catch(...) {}
+      }
+   }
+
 #ifdef HAVE_DBUS
    if (params->enabled[OVERLAY_PARAM_ENABLED_media_player]) {
       if (dbusmgr::dbus_mgr.init(dbusmgr::SRV_MPRIS))
