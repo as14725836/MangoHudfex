@@ -538,6 +538,9 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    // 这里额外烘焙一份完整中日字库（~2.2 万字，~1.8s，Alpha8 ~23MB）：
    // 只有当文本含“三档字库外的字”时才会用到它 —— 常见文本观感不变。
    // 关闭：MANGOHUD_FUSION_CJK=0
+   // 注意：ranges 数据必须存活到 font_atlas->Build()（ImGui 只存指针），
+   // 所以 cjk_ranges_vec 放在函数作用域，不能放进本 {} 块（否则 Build 时读野指针）。
+   ImVector<ImWchar> cjk_ranges_vec;
    {
       const char* cjk_off = std::getenv("MANGOHUD_FUSION_CJK");
       if (!(cjk_off && cjk_off[0] == '0')) {
@@ -555,7 +558,6 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
             0xFE30, 0xFE4F,   // CJK 兼容标点
             0,
          };
-         ImVector<ImWchar> cjk_ranges_vec;
          ImFontGlyphRangesBuilder cjk_builder;
          cjk_builder.AddRanges(fusion_base);
          cjk_builder.AddRanges(font_atlas->GetGlyphRangesChineseFull());
