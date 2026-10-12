@@ -735,6 +735,7 @@ struct Sources {
 
 /** 就地更新：复用 out 已有的 core_pct/core_mhz 缓冲，避免每帧堆分配。
  *  其余字段都是标量，赋值成本可忽略。 */
+inline void fill_snapshot(Snapshot& o, const Sources& s);
 inline void update_snapshot(Snapshot& o, const Sources& s);
 inline Snapshot make_snapshot(const Sources& s) {
     Snapshot o;
