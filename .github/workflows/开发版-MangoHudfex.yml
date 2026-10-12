@@ -3,12 +3,26 @@ name: 开发版 MangoHudfex (aarch64)
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/arch-package.yml'
+      - '.github/workflows/build-package.yml'
+      - '.github/workflows/build-source.yml'
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'  # 每5分钟运行一次
+    # 原为 */5（每天 288 次唤醒）。绝大多数唤醒时上游无新提交，
+    # 却仍要启动昂贵的 arm runner + 装依赖，属于纯浪费。
+    # 改为每 30 分钟一次（每天 48 次），配合下方轻量 gate job 兜底。
+    - cron: '*/30 * * * *'
 
 permissions:
   contents: write  # 允许 GITHUB_TOKEN 创建 Release
+
+# 同一 ref 上只保留最新一次运行；连续 push 时旧的自动取消，避免重复计费。
+concurrency:
+  group: mangohudfex-dev-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   SRC_REPO: https://github.com/as14725836/MangoHudfex
@@ -20,7 +34,64 @@ env:
   LIBDIR: lib/fhud
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # gate：轻量提交检查，跑在便宜的 x86 runner 上。
+  # 作用：上游无新提交时，**根本不启动**昂贵的 ubuntu-24.04-arm runner。
+  # 原实现把检查放在 arm job 内部，导致每次 cron 唤醒（含无变更）都要
+  # 起 arm 机 + 装依赖（2~4 分钟）后才判断"无需构建"，纯烧钱。
+  # ──────────────────────────────────────────────────────────────────────────
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      skip_build: ${{ steps.check.outputs.skip_build }}
+      latest_commit: ${{ steps.info.outputs.latest_commit }}
+      latest_commit_short: ${{ steps.info.outputs.latest_commit_short }}
+      commit_author: ${{ steps.info.outputs.commit_author }}
+      commit_date: ${{ steps.info.outputs.commit_date }}
+      commit_message: ${{ steps.info.outputs.commit_message }}
+    steps:
+      - name: 读取上游最新提交
+        id: info
+        run: |
+          set -e
+          LATEST=$(git ls-remote ${{ env.SRC_REPO }} HEAD | awk '{print $1}')
+          SHORT=${LATEST:0:8}
+          echo "latest_commit=$LATEST" >> $GITHUB_OUTPUT
+          echo "latest_commit_short=$SHORT" >> $GITHUB_OUTPUT
+
+          # 单次 API 调用取回提交元数据（原实现也是 1 次，这里保持不变）
+          curl -sfL "https://api.github.com/repos/${{ env.SRC_API_REPO }}/commits/$LATEST" -o commit.json
+          {
+            echo "commit_date=$(jq -r '.commit.author.date' commit.json | cut -d'T' -f1)"
+            echo "commit_author=$(jq -r '.commit.author.name' commit.json)"
+            echo "commit_message=$(jq -r '.commit.message' commit.json | head -n1)"
+          } >> $GITHUB_OUTPUT
+          echo "👉 上游最新提交: $SHORT"
+
+      - name: 查询"该提交是否已构建过"
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: last-commit.txt
+          # 精确 key = 提交哈希本身；命中即代表该 commit 已成功构建并发布
+          key: mangohudfex-built-${{ steps.info.outputs.latest_commit }}
+          lookup-only: true
+
+      - name: 判断是否需要构建
+        id: check
+        run: |
+          # cache 命中 = 该 commit 已构建过并成功发布过 -> 跳过
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+            echo "✅ 提交 ${{ steps.info.outputs.latest_commit_short }} 已构建过，跳过 arm 构建"
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "🟢 检测到新提交，需要构建"
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: gate
+    if: needs.gate.outputs.skip_build == 'false'
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -28,103 +99,74 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      # 🔹 修复依赖
-      - name: 修复依赖
+      # 版本信息由 gate job 传入，build job 不再重复请求 GitHub API
+      - name: 注入构建信息
         run: |
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo apt update
+          CURRENT_DATE=$(date +%Y%m%d%H%M)
+          {
+            echo "VERSION=dev-${CURRENT_DATE}-${{ needs.gate.outputs.latest_commit_short }}"
+            echo "LATEST_COMMIT=${{ needs.gate.outputs.latest_commit }}"
+            echo "LATEST_COMMIT_SHORT=${{ needs.gate.outputs.latest_commit_short }}"
+            echo "COMMIT_DATE=${{ needs.gate.outputs.commit_date }}"
+            echo "COMMIT_AUTHOR=${{ needs.gate.outputs.commit_author }}"
+            echo "COMMIT_MESSAGE=${{ needs.gate.outputs.commit_message }}"
+            echo "BUILD_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          } >> $GITHUB_ENV
 
-      # 🔹 安装依赖（MangoHudfex = meson + ninja + python3-mako + glslang + GL/EGL/Vulkan/X11/wayland/dbus）
-      - name: 安装依赖
-        run: |
-          sudo apt-get install -y \
-            build-essential gcc g++ git pkg-config \
-            cmake patchelf \
-            meson ninja-build python3 python3-mako \
-            glslang-tools \
-            libglvnd-dev libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
-            libx11-dev libxext-dev libxrandr-dev \
-            libwayland-dev wayland-protocols libxkbcommon-dev \
-            libdbus-1-dev \
+      # 🔹 安装依赖（带 apt 包缓存）
+      # 原实现每次都 rm -rf /var/lib/apt/lists/* + apt update + 全量安装，
+      # 约 1.5~3 分钟纯重复劳动。这里用 cache-apt-pkgs-action 把 deb 包
+      # 缓存下来，命中时几乎瞬时完成（仅做 dpkg 链接）。
+      - name: 安装依赖（缓存）
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: >-
+            build-essential gcc g++ git pkg-config
+            cmake patchelf
+            meson ninja-build python3 python3-mako
+            glslang-tools
+            libglvnd-dev libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev
+            libx11-dev libxext-dev libxrandr-dev
+            libwayland-dev wayland-protocols libxkbcommon-dev
+            libdbus-1-dev
             jq curl unzip wget
+          version: mangohudfex-v1
 
-          echo "--- 工具版本 ---"
+      - name: 工具版本自检
+        run: |
           meson --version
           ninja --version
           python3 -c "import mako; print('mako OK')"
           (glslangValidator --version | head -1) || echo "⚠️ glslangValidator 缺失"
 
-      # 🔹 获取最新提交信息
-      - name: 获取最新提交信息
-        id: get_info
+      # 🔹 ccache：编译对象缓存
+      # MangoHudfex 是 C++ 重项目（大量模板），每次改几个文件仍要重编整个
+      # 翻译单元。ccache 命中时单文件编译可从数秒降到接近 0，整体构建时间
+      # 通常下降 50%~80%。缓存 key 只跟随工具链版本，不跟随 commit，
+      # 这样跨 commit 也能复用。
+      - name: 恢复 ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          # key 用 run-id 保证每次都能写回新缓存（旧 key 不会被覆盖而失败），
+          # restore-keys 前缀匹配让下一次运行总能命中上一轮的对象缓存。
+          key: mangohudfex-ccache-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: |
+            mangohudfex-ccache-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: 安装 ccache
         run: |
-          # 获取最新 commit 完整哈希
-          LATEST_COMMIT_FULL=$(git ls-remote ${{ env.SRC_REPO }} HEAD | awk '{print $1}')
-          LATEST_COMMIT_SHORT=${LATEST_COMMIT_FULL:0:8}
-
-          # 获取提交时间和作者
-          curl -s "https://api.github.com/repos/${{ env.SRC_API_REPO }}/commits/$LATEST_COMMIT_FULL" -o commit.json
-          COMMIT_DATE=$(jq -r '.commit.author.date' commit.json | cut -d'T' -f1)
-          COMMIT_AUTHOR=$(jq -r '.commit.author.name' commit.json)
-          COMMIT_MESSAGE=$(jq -r '.commit.message' commit.json | head -n1)
-
-          # 获取当前日期作为版本号
-          CURRENT_DATE=$(date +%Y%m%d%H%M)
-          VERSION="dev-${CURRENT_DATE}-${LATEST_COMMIT_SHORT}"
-          BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "LATEST_COMMIT=$LATEST_COMMIT_FULL" >> $GITHUB_ENV
-          echo "LATEST_COMMIT_SHORT=$LATEST_COMMIT_SHORT" >> $GITHUB_ENV
-          echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
-          echo "COMMIT_AUTHOR=$COMMIT_AUTHOR" >> $GITHUB_ENV
-          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
-          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
-
-          echo "📊 构建信息:"
-          echo "   版本: $VERSION"
-          echo "   提交: $LATEST_COMMIT_SHORT"
-          echo "   作者: $COMMIT_AUTHOR"
-          echo "   日期: $COMMIT_DATE"
-
-      # 🔹 获取上次构建的提交
-      - name: 获取上次构建信息
-        id: get_last
-        run: |
-          if [ -f "${{ env.LAST_DEV_COMMIT_FILE }}" ]; then
-            LAST_BUILD=$(cat "${{ env.LAST_DEV_COMMIT_FILE }}")
-            echo "👉 上次构建提交: ${LAST_BUILD:0:8}"
-            echo "last_build=$LAST_BUILD" >> $GITHUB_OUTPUT
-          else
-            echo "👉 首次构建，无历史记录"
-            echo "last_build=none" >> $GITHUB_OUTPUT
-          fi
-
-      # 🔹 判断是否需要构建
-      - name: 检查是否需要构建
-        id: check_build
-        run: |
-          LAST_BUILD="${{ steps.get_last.outputs.last_build }}"
-          CURRENT_COMMIT="${{ env.LATEST_COMMIT }}"
-
-          if [ "$CURRENT_COMMIT" = "$LAST_BUILD" ]; then
-            echo "✅ 无新提交，跳过构建"
-            echo "skip_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "🟢 检测到新提交，准备构建"
-            echo "skip_build=false" >> $GITHUB_OUTPUT
-          fi
-
-      # 🔹 跳过无更新构建
-      - name: 跳过构建
-        if: steps.check_build.outputs.skip_build == 'true'
-        run: |
-          echo "✅ 无新提交，跳过构建"
-          exit 0
+          sudo apt-get install -y ccache || true
+          ccache --set-config=max_size=1G
+          ccache --set-config=compression=true
+          ccache --zero-stats
 
       # 🔹 克隆 MangoHudfex 并构建（Meson + Ninja）
       - name: 克隆 MangoHudfex 并构建
-        if: steps.check_build.outputs.skip_build == 'false'
+        env:
+          # 让 meson/ninja 通过 ccache 包装编译器
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
           # 清理旧目录
           rm -rf mangohud
@@ -144,6 +186,11 @@ jobs:
           export GLIBC_PREFIX=/data/data/com.termux/files/usr/glibc
           export PATH=$GLIBC_PREFIX/bin:$PATH
           export LD_LIBRARY_PATH=$GLIBC_PREFIX/lib:$LD_LIBRARY_PATH
+
+          # —— ccache 包装编译器（meson 优先读 CC/CXX）——
+          export CC="ccache gcc"
+          export CXX="ccache g++"
+          ccache --version | head -1
 
           # —— 构建 + 安装树（统一走仓库内脚本）——
           # 取代原先内联的 heredoc 兼容层注入 + meson/ninja/strip/sed 一式
@@ -177,30 +224,32 @@ jobs:
           echo "TAR_FILE=$TAR_FILE" >> $GITHUB_ENV
           echo "✅ 打包完成: $TAR_FILE"
 
-          # 保存构建记录
+          # 保存构建指纹（供 gate job 的 cache 判断"该 commit 已构建"）
           echo "${{ env.LATEST_COMMIT }}" > "${{ env.LAST_DEV_COMMIT_FILE }}"
+          cp "${{ env.LAST_DEV_COMMIT_FILE }}" last-commit.txt
+          echo "✅ 已写入构建指纹: ${{ env.LATEST_COMMIT_SHORT }}"
+
+          ccache --show-stats || true
 
       # 🔹 上传构建产物
       - name: 上传构建产物
-        if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: mangohudfex-dev-${{ env.VERSION }}
           path: ${{ env.TAR_FILE }}
           retention-days: 7
 
-      # 🔹 保存 commit 记录
-      - name: 保存构建记录
-        if: steps.check_build.outputs.skip_build == 'false'
-        uses: actions/upload-artifact@v4
+      # 🔹 保存构建指纹到 cache：下一次 gate job 命中即代表"这个 commit 已构建"
+      # 用 cache@v4（而非 cache/save）：key 已存在时不会因为冲突而让 job 失败。
+      # 注意这里必须在"写文件"之后运行，否则缓存内容为空。
+      - name: 保存构建指纹（cache）
+        uses: actions/cache@v4
         with:
-          name: last-dev-mangohudfex-commit
-          path: ${{ env.LAST_DEV_COMMIT_FILE }}
-          retention-days: 90
+          path: last-commit.txt
+          key: mangohudfex-built-${{ needs.gate.outputs.latest_commit }}
 
       # 🔹 发布到 GitHub Release
       - name: 发布到 GitHub Release
-        if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mangohudfex-dev-${{ env.VERSION }}

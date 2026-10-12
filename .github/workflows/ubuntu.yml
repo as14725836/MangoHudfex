@@ -1,47 +1,62 @@
 name: Ubuntu build testing
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'meson.build'
+      - 'meson_options.txt'
+      - 'subprojects/**'
+      - 'modules/**'
+      - '.github/workflows/ubuntu.yml'
+  pull_request:
+  workflow_dispatch:
+
+# 同一 ref 只保留最新一次
+concurrency:
+  group: ubuntu-test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test:
     strategy:
+      # 一个编译器失败就不必再等另一个 —— 快速反馈 + 省 runner 分钟
+      fail-fast: true
       matrix:
         compiler: [clang, gcc]
         os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
     - name: 'Checkout'
-      uses: actions/checkout@v3
-    - name: 'Install prerequisites'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          appstream \
-          glslang-tools \
-          ninja-build \
-          python3-mako \
-          python3-setuptools \
-          python3-wheel \
-          mesa-common-dev \
-          libcmocka-dev \
-          libdbus-1-dev \
-          libglfw3-dev \
-          libwayland-dev \
-          libxnvctrl-dev \
-          libxkbcommon-dev \
-          meson
+      uses: actions/checkout@v4
+    - name: 'Install prerequisites (cached)'
+      uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+      with:
+        packages: >-
+          appstream glslang-tools ninja-build python3-mako
+          python3-setuptools python3-wheel mesa-common-dev
+          libcmocka-dev libdbus-1-dev libglfw3-dev libwayland-dev
+          libxnvctrl-dev libxkbcommon-dev meson ccache
+        version: mangohudfex-ubuntu-v1
+    - name: 'Restore ccache'
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ubuntu-${{ matrix.compiler }}-ccache-${{ github.sha }}
+        restore-keys: ubuntu-${{ matrix.compiler }}-ccache-
     - name: 'Install clang'
       if:  ${{ (matrix.compiler == 'clang') }}
       run: |
           sudo apt-get install -y clang
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
+          echo "CC=ccache clang" >> "$GITHUB_ENV"
+          echo "CXX=ccache clang++" >> "$GITHUB_ENV"
     - name: 'Install gcc'
       if:  ${{ (matrix.compiler == 'gcc') }}
       run: |
           sudo apt-get install -y gcc g++
-          echo "CC=gcc" >> "$GITHUB_ENV"
-          echo "CXX=g++" >> "$GITHUB_ENV"
+          echo "CC=ccache gcc" >> "$GITHUB_ENV"
+          echo "CXX=ccache g++" >> "$GITHUB_ENV"
     - name: 'Configure'
       run: meson setup ./builddir --prefix=/usr
           -D include_doc=true
