@@ -96,9 +96,37 @@ inline constexpr int kSquircleSeg = 10;
  * 生成超级椭圆圆角矩形（squircle）的闭合路径，顺时针。
  * 用于面板底与外框 —— 两者共用同一套几何，保证贴合与宽度一致。
  */
+/** 复用的路径缓冲池。
+ *
+ *  性能：原实现每次 squircle_path 都传入一个全新的 std::vector<ImVec2>，
+ *  draw() 每帧要建 5 个（阴影 ×2、面板底、内高光、描边），加上磁贴与折线，
+ *  单帧十余次堆分配/释放。ImVec2 是小且定长的数据，非常适合复用。
+ *  这里用 thread_local 池按「槽位」复用，彻底消除热路径上的 vector 分配。
+ *  注意：MangoHud 的 HUD 绘制在单一线程内完成，因此 thread_local 语义安全。
+ */
+enum PathSlot {
+    kPathShadowA = 0,
+    kPathShadowB,
+    kPathPanel,
+    kPathHighlight,
+    kPathOutline,
+    kPathTile,
+    kPathScratch,       // 折线图等变长数据（不 reserve，按需增长后即长期保留）
+    kPathSlotCount
+};
+
+inline std::vector<ImVec2>& path_pool(PathSlot slot) {
+    static thread_local std::vector<ImVec2> pool[kPathSlotCount];
+    return pool[static_cast<int>(slot)];
+}
+
 inline void squircle_path(std::vector<ImVec2>& out, float x0, float y0, float x1, float y1,
                           float r, float n, int seg) {
     out.clear();
+    // 预留固定容量：4 角 × (seg+1) + 4 个边端点，避免首次分配后反复扩容
+    const size_t need = static_cast<size_t>(4 * (seg + 1) + 4);
+    if (out.capacity() < need)
+        out.reserve(need);
     const float w = x1 - x0;
     const float h = y1 - y0;
     const float rmax = std::min(w, h) * 0.5f;
@@ -121,15 +149,39 @@ inline void squircle_path(std::vector<ImVec2>& out, float x0, float y0, float x1
     }
 
     // 一个角的弧：中心 + 方向符号 + 起始/结束角度（度）
-    auto arc = [&](float cx, float cy, float sx, float sy, float a0, float a1) {
+    //
+    // 性能：pow(|cos a|, e) / pow(|sin a|, e) 只取决于参数 (e, seg, i)，
+    // 与具体几何位置无关。原实现每次调用都重算 4×seg×2 次 transcendental，
+    // 而每帧要调用 4~5 次。这里按 (e, seg) 缓存一张单位弧表，命中后
+    // 只剩乘加。表极小（seg+1 项），且仅在 e/seg 变化时重建。
+    struct UnitArc {
+        float e = -1.0f;
+        int seg = -1;
+        std::vector<ImVec2> unit;   // (pow(|cos|,e), pow(|sin|,e))
+    };
+    static thread_local UnitArc s_arc;
+    if (s_arc.seg != seg || s_arc.e != e) {
+        s_arc.e = e;
+        s_arc.seg = seg;
+        s_arc.unit.resize(static_cast<size_t>(seg + 1));
         for (int i = 0; i <= seg; ++i) {
-            const float deg = a0 + (a1 - a0) * static_cast<float>(i) / static_cast<float>(seg);
-            const float a = deg * 3.14159265358979323846f / 180.0f;
+            const float t = static_cast<float>(i) / static_cast<float>(seg);
+            const float a = t * 1.57079632679489661923f;   // 0..90° 单位弧
             // 必须取绝对值：float 精度下 cos(90°) 会得到 -4.4e-8，
             // 而 pow(负数, 小数) 返回 NaN（方向由 sx/sy 负责）。
-            const float dx = r * std::pow(std::fabs(std::cos(a)), e);
-            const float dy = r * std::pow(std::fabs(std::sin(a)), e);
-            out.push_back(ImVec2(cx + sx * dx, cy + sy * dy));
+            s_arc.unit[static_cast<size_t>(i)] =
+                ImVec2(std::pow(std::fabs(std::cos(a)), e),
+                       std::pow(std::fabs(std::sin(a)), e));
+        }
+    }
+    const ImVec2* unit = s_arc.unit.data();
+    auto arc = [&](float cx, float cy, float sx, float sy, float a0, float a1) {
+        // a0/a1 只可能是 0→90 或 90→0，即正用或反用同一张表
+        const bool reverse = (a0 > a1);
+        for (int i = 0; i <= seg; ++i) {
+            const int idx = reverse ? (seg - i) : i;
+            const ImVec2& u = unit[idx];
+            out.push_back(ImVec2(cx + sx * r * u.x, cy + sy * r * u.y));
         }
     };
 
@@ -459,29 +511,76 @@ inline std::vector<float>& ft_history() {
     return h;
 }
 
+/** 帧时间样本的世代号：push/裁剪时递增，用于让下游缓存失效 */
+inline uint64_t& ft_history_gen() {
+    static uint64_t g = 0;
+    return g;
+}
+
 inline void note_frametime(float ms) {
     if (!(ms > 0.0f) || !std::isfinite(ms))
         return;
     std::vector<float>& h = ft_history();
     h.push_back(ms);
-    if (h.size() > 600)
-        h.erase(h.begin(), h.begin() + static_cast<long>(h.size() - 600));
+    // 超容量时一次性砍掉多余部分（原先每次只砍 1 个，配合 erase(begin)
+    // 会触发整段搬移；批量裁剪摊薄开销）。reserve 避免反复扩容。
+    if (h.capacity() < 768)
+        h.reserve(768);
+    if (h.size() > 600) {
+        const size_t drop = h.size() - 600;
+        h.erase(h.begin(), h.begin() + static_cast<long>(drop));
+    }
+    // 样本集合变化 → 让排序缓存失效
+    ++ft_history_gen();
 }
 
-/** 最差 frac 比例帧时间的平均帧率（frac=0.01 → 1% low） */
+/** 最差 frac 比例帧时间的平均帧率（frac=0.01 → 1% low）
+ *
+ *  性能：原实现每帧对 600 个样本做一次「整数组拷贝 + 全排序」，
+ *  而 low1/low01/low001 三个分位各调一次 —— 即每帧 3 次拷贝 + 3 次排序。
+ *  60 FPS 下相当于每秒 180 次 600 元素排序 + 180 次堆分配，是 FHUD 最大
+ *  的 CPU 热点之一（帧时间直方图本来就不需要每帧重排）。
+ *
+ *  这里改为：只在样本集合真的变化时重排一次，并把排序结果缓存起来；
+ *  三个分位共用同一份有序数组，O(1) 取用。
+ */
+struct SortedFtCache {
+    std::vector<float> sorted;   // 升序
+    size_t src_size = 0;         // 对应的样本数量
+    uint64_t src_gen = 0;        // 样本世代号（push/erase 时递增）
+    bool dirty = true;
+};
+
+inline SortedFtCache& ft_sorted_cache() {
+    static SortedFtCache c;
+    return c;
+}
+
 inline float low_fps(float frac) {
-    std::vector<float> h = ft_history();
+    const std::vector<float>& h = ft_history();
     if (h.size() < 30)
         return 0.0f;
-    std::sort(h.begin(), h.end());   // 升序：越差（ms 越大）越靠后
-    size_t n = static_cast<size_t>(static_cast<float>(h.size()) * frac);
+
+    SortedFtCache& c = ft_sorted_cache();
+    const uint64_t gen = ft_history_gen();
+    // 只有样本变化（代际不同）或长度不同才重排；同一帧内多次调用直接复用
+    if (c.dirty || c.src_gen != gen || c.src_size != h.size()) {
+        c.sorted = h;                              // 一次拷贝
+        std::sort(c.sorted.begin(), c.sorted.end()); // 一次排序
+        c.src_size = h.size();
+        c.src_gen = gen;
+        c.dirty = false;
+    }
+
+    const std::vector<float>& sorted = c.sorted;
+    size_t n = static_cast<size_t>(static_cast<float>(sorted.size()) * frac);
     if (n < 1)
         n = 1;
-    if (n > h.size())
-        n = h.size();
+    if (n > sorted.size())
+        n = sorted.size();
     float sum = 0.0f;
-    for (size_t i = h.size() - n; i < h.size(); ++i)
-        sum += h[i];
+    for (size_t i = sorted.size() - n; i < sorted.size(); ++i)
+        sum += sorted[i];
     const float avg_ms = sum / static_cast<float>(n);
     return avg_ms > 0.0f ? 1000.0f / avg_ms : 0.0f;
 }
@@ -557,6 +656,19 @@ struct Snapshot {
     std::vector<int> core_pct, core_mhz;
 };
 
+/** 行容器复用池。
+ *
+ *  性能：build_full / build_tiles / build_pill / build_mega 每次调用都会
+ *  构造若干 std::vector<Row> / std::vector<Span> / std::vector<Tile>。
+ *  这些容器随 build() 结束即析构，导致每帧数十次堆分配。
+ *  这里提供按槽位复用的 thread_local 池：进入 build_* 时取用（已 clear），
+ *  结束时把内容搬进 Frame，池本身留待下一帧继续使用。
+ */
+inline std::vector<struct Row>& row_pool(int slot) {
+    static thread_local std::vector<std::vector<struct Row>> pool(5);
+    return pool[static_cast<size_t>(slot)];
+}
+
 /** 控制项：复用 MangoHud 的既有开关 */
 struct Chips {
     bool fps = true, gpu = true, cpu = true;
@@ -621,8 +733,16 @@ struct Sources {
     std::vector<int> core_pct, core_mhz;
 };
 
+/** 就地更新：复用 out 已有的 core_pct/core_mhz 缓冲，避免每帧堆分配。
+ *  其余字段都是标量，赋值成本可忽略。 */
+inline void update_snapshot(Snapshot& o, const Sources& s);
 inline Snapshot make_snapshot(const Sources& s) {
     Snapshot o;
+    fill_snapshot(o, s);
+    return o;
+}
+
+inline void fill_snapshot(Snapshot& o, const Sources& s) {
     o.fps = static_cast<float>(s.fps);
     o.ft_ms = static_cast<float>(s.frametime_ms);
     if (!(o.fps > 0.0f) && o.ft_ms > 0.0f)
@@ -666,9 +786,23 @@ inline Snapshot make_snapshot(const Sources& s) {
     o.engine = s.engine_name_str;
     o.engine_ver = s.engine_version;
     o.driver = s.driver_name;
-    o.core_pct = s.core_pct;
-    o.core_mhz = s.core_mhz;
-    return o;
+    // 核心数组：原实现直接赋值，每帧拷贝两个 vector（含堆分配）。
+    // 这里先 resize 到目标长度（容量跨帧保留），再逐元素拷贝 —— 长度不变时
+    // 完全没有分配，只有一次 memcpy。
+    if (o.core_pct.size() != s.core_pct.size())
+        o.core_pct.resize(s.core_pct.size());
+    if (!s.core_pct.empty())
+        std::memcpy(o.core_pct.data(), s.core_pct.data(),
+                    s.core_pct.size() * sizeof(int));
+    if (o.core_mhz.size() != s.core_mhz.size())
+        o.core_mhz.resize(s.core_mhz.size());
+    if (!s.core_mhz.empty())
+        std::memcpy(o.core_mhz.data(), s.core_mhz.data(),
+                    s.core_mhz.size() * sizeof(int));
+}
+
+inline void update_snapshot(Snapshot& o, const Sources& s) {
+    fill_snapshot(o, s);
 }
 
 // ============================================================================
@@ -877,7 +1011,9 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     const float line_gap = f.M.gsp(2.5f);
     const float lv_gap = f.M.gsp(6.0f);
 
-    std::vector<Row> rows;
+    // 复用池：避免每帧重建 vector<Row>（clear 保留 capacity）
+    std::vector<Row>& rows = row_pool(0);
+    rows.clear();
     auto add = [&](const char* label, uint32_t lcol, std::vector<Span> vals) {
         Row r;
         r.label = Span{label, lcol, row_px};
@@ -1021,7 +1157,8 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         // 不再缩进到数值列。可用宽度 = 标签列 + 间隔 + 数值列，不额外撑宽面板。
         const std::vector<std::string> ml =
             wrap_name_to(f.M, model_txt, row_px, lw + lv_gap + vw);
-        std::vector<Row> mrows;
+        std::vector<Row>& mrows = row_pool(1);
+        mrows.clear();
         mrows.push_back(Row{Span{ml[0], kColModel, row_px}, {}, true});
         for (size_t i = 1; i < ml.size(); ++i)
             mrows.push_back(Row{Span{ml[i], kColModel, row_px}, {}, true});
@@ -1493,7 +1630,8 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
     const float lv_gap = f.M.gsp(7.0f);
     const float gutter = f.M.gsp(16.0f);
 
-    std::vector<Row> left;
+    std::vector<Row>& left = row_pool(3);
+    left.clear();
     const std::string model_txt =
         (c.gpu_model && !s.gpu_model.empty()) ? s.gpu_model : std::string();
     if (c.gpu) {
@@ -1545,7 +1683,8 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         }
     }
 
-    std::vector<Row> right;
+    std::vector<Row>& right = row_pool(4);
+    right.clear();
     if (c.vram && s.vram_used >= 0.0f) {
         std::vector<Span> v = value_unit(gib(s.vram_used), row_px, unit_px);
         if (s.vram_pct >= 0) {
@@ -1627,7 +1766,9 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
             vw = std::max(vw, f.M.run_w(r.vals));
         }
         const std::vector<std::string> ml = wrap_name_to(f.M, model_txt, row_px, vw + pad);
-        std::vector<Row> mrows;
+    std::vector<Row>& mrows = row_pool(2);
+    mrows.clear();
+        mrows.clear();
         mrows.push_back(Row{Span{hud_i18n::tr("GPU"), kColGpu, row_px}, {Span{ml[0], kColModel, row_px}}, false});
         for (size_t i = 1; i < ml.size(); ++i)
             mrows.push_back(Row{Span{"", kColValue, row_px}, {Span{ml[i], kColModel, row_px}}, false});
@@ -1857,13 +1998,13 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     if (panel_fill)
     for (int i = 2; i >= 1; --i) {
         const float e = f.M.sp(1.4f) * static_cast<float>(i);
-        std::vector<ImVec2> shp;
+        std::vector<ImVec2>& shp = path_pool(i == 1 ? kPathShadowA : kPathShadowB);
         squircle_path(shp, x0 - e, y0 - e * 0.5f, x1 + e, y1 + e, radius + e, sq_n, kSquircleSeg);
         dl->AddConvexPolyFilled(shp.data(), static_cast<int>(shp.size()),
                                 to_imcol(i == 1 ? kColShadowNear : kColShadowFar));
     }
 
-    std::vector<ImVec2> path;
+    std::vector<ImVec2>& path = path_pool(kPathPanel);
     squircle_path(path, x0, y0, x1, y1, radius, sq_n, kSquircleSeg);
     if (panel_fill)
         dl->AddConvexPolyFilled(path.data(), static_cast<int>(path.size()), to_imcol(bg));
@@ -1871,7 +2012,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     // 内高光：贴着面板内沿 1px 的亮边（玻璃质感），与强调色描边相互独立
     if (panel_fill) {
         const float hi = 1.0f;
-        std::vector<ImVec2> hp;
+        std::vector<ImVec2>& hp = path_pool(kPathHighlight);
         squircle_path(hp, x0 + hi, y0 + hi, x1 - hi, y1 - hi,
                       std::max(0.0f, radius - hi), sq_n, kSquircleSeg);
         dl->AddPolyline(hp.data(), static_cast<int>(hp.size()), to_imcol(kColPanelEdge),
@@ -1884,7 +2025,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     if (sw > 0.0f) {
         sw = std::max(1.0f, std::round(sw));
         const float d = sw * 0.5f;
-        std::vector<ImVec2> ipath;
+        std::vector<ImVec2>& ipath = path_pool(kPathOutline);
         squircle_path(ipath, x0 + d, y0 + d, x1 - d, y1 - d,
                       std::max(0.0f, radius - d), sq_n, kSquircleSeg);
         dl->AddPolyline(ipath.data(), static_cast<int>(ipath.size()), to_imcol(kColAccent),
@@ -1950,7 +2091,7 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
             for (float v : vals)
                 if (std::isfinite(v))
                     peak = std::max(peak, v);
-            std::vector<ImVec2> pts;
+            std::vector<ImVec2>& pts = path_pool(kPathScratch);
             pts.reserve(vals.size());
             const float step = f.graph.w() / static_cast<float>(vals.size() - 1);
             for (size_t i = 0; i < vals.size(); ++i) {

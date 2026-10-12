@@ -1492,8 +1492,13 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          // 署名行文本：留空则 HUD 上不显示（仅当用户显式设置 custom_text_center 时才画）
          fo.credit = real_params->custom_text_center;
 
-         fusionhud::fr::Frame fframe;
-         const auto fs_snap = fusionhud::fr::make_snapshot(src);
+         // 复用同一个 Frame：build() 内部只 clear 不清容量，
+         // 于是 glyphs / tiles 的底层缓冲跨帧保留，消除每帧堆分配。
+         // （HUD 绘制始终在渲染线程，static 复用安全。）
+         static fusionhud::fr::Frame fframe;
+         // 复用快照：core_pct/core_mhz 的底层缓冲跨帧保留，避免每帧 vector 分配
+         static fusionhud::fr::Snapshot fs_snap;
+         fusionhud::fr::update_snapshot(fs_snap, src);
          const auto fs_chips = fusionhud::fr::read_chips<swapchain_stats>(*real_params);
          const fusionhud::FusionSize fsz = fusionhud::currentFusionSize(*real_params);
          fusionhud::fr::build(fframe, fs_snap, fs_chips, fsz, fo);
@@ -1510,14 +1515,20 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          {
             const ImVec2 disp = ImGui::GetIO().DisplaySize;
             // MANGOHUD_FUSION_AUTOFIT=0 可关掉自动缩小：面板超出画面就让它裁，字不变小
-            const char* autofit_env = std::getenv("MANGOHUD_FUSION_AUTOFIT");
-            const bool autofit_on = !(autofit_env && autofit_env[0] == '0');
+            // getenv 每帧调用虽廉价但非零开销（要遍历 environ）；环境变量在进程
+            // 生命周期内不变，这里缓存首次结果。
+            static const bool autofit_on = [] {
+               const char* e = std::getenv("MANGOHUD_FUSION_AUTOFIT");
+               return !(e && e[0] == '0');
+            }();
             float fit = 1.0f;
             if (autofit_on && disp.x > 8.0f && fsize.x > disp.x - 2.0f)
                fit = std::max(fit, fsize.x / (disp.x - 2.0f));
             if (autofit_on && disp.y > 8.0f && fsize.y > disp.y - 2.0f)
                fit = std::max(fit, fsize.y / (disp.y - 2.0f));
-            if (fit > 1.0f) {
+            // 迟滞：仅当超出量 >0.5% 才触发重排。临界尺寸下 fsize 与 disp 反复
+            // 交叉会让每帧都白跑一次完整 build；加阈值后静止画面只 build 一次。
+            if (fit > 1.005f) {
                fo.scale = std::max(0.35f, fo.scale / fit);
                fusionhud::fr::build(fframe, fs_snap, fs_chips, fsz, fo);
                fmg = fusionhud::fr::panel_margin(fframe, fo);
