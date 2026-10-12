@@ -8,11 +8,17 @@ using namespace std;
 
 void BatteryStats::numBattery() {
     int batteryCount = 0;
-    if (!fs::exists("/sys/class/power_supply/")) {
-         batteryCount = 0;
-    }
-    fs::path path("/sys/class/power_supply/");
-    for (auto& p : fs::directory_iterator(path)) {
+    std::error_code ec;
+    // Android 沙箱下 /sys/class/power_supply/ 常常"存在但不可读"。
+    // 必须用 error_code 版本，否则 ghc::filesystem 会抛异常且无人捕获，
+    // 直接 terminate 整个进程（表现为运行时报 "权限不够" 后崩溃）。
+    if (fs::exists("/sys/class/power_supply/", ec) && !ec) {
+      fs::path path("/sys/class/power_supply/");
+      for (auto& p : fs::directory_iterator(path, ec)) {
+        if (ec) {
+            SPDLOG_DEBUG("Unable to iterate power_supply: {}", ec.message());
+            break;
+        }
         string fileName = p.path().filename();
         // Android 上电池节点叫 battery / bms，而不是桌面的 BAT0/BAT1
         if (fileName.find("BAT") != std::string::npos ||
@@ -20,6 +26,9 @@ void BatteryStats::numBattery() {
             battPath[batteryCount] = p.path();
             batteryCount += 1;
         }
+      }
+    } else {
+      SPDLOG_DEBUG("No readable power_supply directory, battery stats disabled");
     }
     batt_count = batteryCount;
     batt_check = true;

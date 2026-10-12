@@ -197,7 +197,12 @@ bool lib_loaded(const std::string& lib, pid_t pid) {
             fs::path("/proc") / who / "fd" };
     for (auto& path : paths) {
         if (dir_exists(path.string())) {
-            for (auto& p : fs::directory_iterator(path)) {
+            std::error_code ec;
+            for (auto& p : fs::directory_iterator(path, ec)) {
+                if (ec) {
+                    SPDLOG_DEBUG("Unable to iterate {}: {}", path.string(), ec.message());
+                    break;
+                }
                 auto file = p.path().string();
                 auto sym = read_symlink(file.c_str());
                 if (to_lower(sym).find(lib) != std::string::npos) {

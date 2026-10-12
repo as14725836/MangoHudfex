@@ -40,7 +40,17 @@ void device_update(const struct overlay_params& params){
     switch_count = 0;
     bitdo_count = 0;
     shield_count = 0;
-    for (auto &p : fs::directory_iterator(path)) {
+    std::error_code ec;
+    // 同样的沙箱问题：目录存在但不可读时 directory_iterator 会抛异常。
+    if (!fs::exists(path, ec) || ec) {
+        SPDLOG_DEBUG("No readable power_supply directory, device stats disabled");
+        return;
+    }
+    for (auto &p : fs::directory_iterator(path, ec)) {
+        if (ec) {
+            SPDLOG_DEBUG("Unable to iterate power_supply: {}", ec.message());
+            break;
+        }
         string fileName = p.path().filename();
 //Gamepads
         if (std::find(params.device_battery.begin(), params.device_battery.end(), "gamepad") != params.device_battery.end()){
