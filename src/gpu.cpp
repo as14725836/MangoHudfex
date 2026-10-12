@@ -34,9 +34,12 @@ GPUS::GPUS(const overlay_params* early_params) {
             }
         }
     } catch (const fs::filesystem_error& ex) {
-        SPDLOG_WARN("Failed to access /sys/class/drm: {}. GPU detection disabled.", ex.what());
+        // Android 沙箱下 /sys/class/drm 通常不可读，这是预期情况而非故障：
+        // Adreno 走 KGSL 注入路径（见下方 "Adreno GPU injected"），不依赖 DRM。
+        // 因此降到 DEBUG，避免每次启动都刷 WARN 噪音。
+        SPDLOG_DEBUG("Failed to access /sys/class/drm: {}. DRM-based GPU detection disabled.", ex.what());
     } catch (const std::exception& ex) {
-        SPDLOG_WARN("Error during GPU detection: {}. GPU detection disabled.", ex.what());
+        SPDLOG_DEBUG("Error during GPU detection: {}. DRM-based GPU detection disabled.", ex.what());
     }
 
     // Now process the sorted GPU entries

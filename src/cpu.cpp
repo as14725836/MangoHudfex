@@ -809,7 +809,9 @@ bool CPUStats::GetCpuFile() {
     }
 
     if (input.empty() || !file_exists(input)) {
-        SPDLOG_ERROR("Could not find cpu temp sensor location");
+        // Android 沙箱下没有 hwmon/thermal 节点是常态（温度由 kgsl 侧单独读），
+        // 不应作为 ERROR 刷屏；降到 DEBUG。
+        SPDLOG_DEBUG("Could not find cpu temp sensor location");
         return false;
     }
 
