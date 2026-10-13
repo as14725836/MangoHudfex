@@ -1888,6 +1888,11 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.has_pill = false;
     f.content_w = 0.0f;
     f.content_h = 0.0f;
+    // Frame 现在跨帧复用（见 overlay.cpp 的 static Frame），place() 里这两个字段
+    // 是 std::max / 赋值累积的，必须在每次 build 前重置，否则会残留上一帧的
+    // 基线与右端，让 add_subtle_clock() 的“底部时钟并排”判断用到过期几何。
+    f.last_baseline = -1.0f;
+    f.last_call_right = 0.0f;
     f.M.font = o.font;
     f.M.font_mid = o.font_mid ? o.font_mid : o.font;
     f.M.font_small = o.font_small ? o.font_small : o.font;
