@@ -2093,6 +2093,11 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
                 if (std::isfinite(v))
                     peak = std::max(peak, v);
             std::vector<ImVec2>& pts = path_pool(kPathScratch);
+            // 复用池必须清空：kPathScratch 不经过 squircle_path()，而后者才会 clear()。
+            // 漏掉这一行会让 pts 每帧累积（60 点/帧），AddPolyline 的顶点数随之无界增长，
+            // 约 1~2 秒后突破 ImGui 的 16-bit 索引上限 65535，触发
+            // imgui_draw.cpp "Too many vertices in ImDrawList using 16-bit indices" 断言。
+            pts.clear();
             pts.reserve(vals.size());
             const float step = f.graph.w() / static_cast<float>(vals.size() - 1);
             for (size_t i = 0; i < vals.size(); ++i) {
