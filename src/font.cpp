@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdlib>
+#include <exception>   // std::exception (all-glyph fallback guard)
 #include "overlay.h"
 #include "file_utils.h"
 #include "font_default.h"
@@ -544,6 +545,7 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    {
       const char* cjk_off = std::getenv("MANGOHUD_FUSION_CJK");
       if (!(cjk_off && cjk_off[0] == '0')) {
+         try {
          float cjk_px = size_mid;
          if (cjk_px > 34.0f)
             cjk_px = 34.0f;
@@ -560,7 +562,13 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
          };
          ImFontGlyphRangesBuilder cjk_builder;
          cjk_builder.AddRanges(fusion_base);
-         cjk_builder.AddRanges(font_atlas->GetGlyphRangesChineseFull());
+         {
+            const char* _cjk_max = std::getenv("MANGOHUD_FUSION_CJK_MAX");
+            if (_cjk_max && _cjk_max[0] == '1')
+               cjk_builder.AddRanges(font_atlas->GetGlyphRangesChineseSimplifiedCommon());
+            else
+               cjk_builder.AddRanges(font_atlas->GetGlyphRangesChineseFull());
+         }
          cjk_builder.AddRanges(fusion_extra);
          cjk_builder.BuildRanges(&cjk_ranges_vec);
          ImFontConfig cjk_cfg = fusion_config;
@@ -568,6 +576,13 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
          cjk_cfg.GlyphExtraSpacing.x = cjk_px * fusionhud::kTrackingEm;
          if (!fusion_ttf.empty())
             fusion.cjk = font_atlas->AddFontFromFileTTF(fusion_ttf.c_str(), cjk_px, &cjk_cfg, cjk_ranges_vec.Data);
+         } catch (const std::exception& e) {
+            fusion.cjk = nullptr;
+            SPDLOG_WARN("fusion cjk atlas skipped (safe fallback): {}", e.what());
+         } catch (...) {
+            fusion.cjk = nullptr;
+            SPDLOG_WARN("fusion cjk atlas skipped (safe fallback)");
+         }
       }
    }
 
@@ -580,5 +595,10 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    else
       text_font = font_atlas->Fonts[0];
 
+   if (const char* tw = std::getenv("MANGOHUD_FUSION_TEX_WIDTH")) {
+      int w = atoi(tw);
+      if (w >= 512 && w <= 16384)
+         font_atlas->TexDesiredWidth = w;
+   }
    font_atlas->Build();
 }

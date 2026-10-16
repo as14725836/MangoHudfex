@@ -38,6 +38,7 @@
 #include <sstream>
 #include <inttypes.h>
 #include <spdlog/spdlog.h>
+#include <exception>
 #include <imgui.h>
 
 #include "mesa/util/macros.h" // defines "restrict" for vk_util.h
@@ -1550,10 +1551,19 @@ static struct overlay_draw *before_present(struct swapchain_data *swapchain_data
    snapshot_swapchain_frame(swapchain_data);
 
    if (swapchain_data->sw_stats.n_frames > 0) {
-      compute_swapchain_display(swapchain_data);
-      draw = render_swapchain_display(swapchain_data, present_queue,
-                                      wait_semaphores, n_wait_semaphores,
-                                      imageIndex);
+      try {
+         compute_swapchain_display(swapchain_data);
+         draw = render_swapchain_display(swapchain_data, present_queue,
+                                         wait_semaphores, n_wait_semaphores,
+                                         imageIndex);
+      } catch (const std::exception& e) {
+         // 绘制失败不应拖垮宿主（移动 GPU / wine 环境尤甚）：丢弃本帧覆盖层，仅呈现原画面。
+         SPDLOG_ERROR("FHUD present hook skipped (frame dropped): {}", e.what());
+         draw = NULL;
+      } catch (...) {
+         SPDLOG_ERROR("FHUD present hook skipped (frame dropped)");
+         draw = NULL;
+      }
    }
 
    return draw;
