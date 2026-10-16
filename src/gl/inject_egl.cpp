@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <cstring>
 #include <dlfcn.h>
+#include <exception>
 #include <chrono>
 #include <iomanip>
 #include <spdlog/spdlog.h>
@@ -157,15 +158,21 @@ static void mangohud_egl_before_swap(void* dpy, void* surf)
         ::scoped_lock lk(global_lock);
         void* ctx = pfn_eglGetCurrentContext();
         gl_context *gl_ctx = gl_contexts[ctx];
-
-        if (!gl_ctx)
-            gl_ctx = create_gl_context(ctx);
-        imgui_create(gl_ctx, gl_wsi::GL_WSI_EGL);
-
-        int width=0, height=0;
-        if (pfn_eglQuerySurface(dpy, surf, EGL_HEIGHT, &height) &&
-            pfn_eglQuerySurface(dpy, surf, EGL_WIDTH, &width))
-            imgui_render(gl_ctx, width, height);
+        // 异常保护：虚拟/远程 GPU（virgl 等）下 GL 调用更易失败，丢帧即可，
+        // 不能让宿主崩溃（fps_limiter 的开启放在 try 外，保证状态成对）。
+        try {
+            if (!gl_ctx)
+                gl_ctx = create_gl_context(ctx);
+            imgui_create(gl_ctx, gl_wsi::GL_WSI_EGL);
+            int width=0, height=0;
+            if (pfn_eglQuerySurface(dpy, surf, EGL_HEIGHT, &height) &&
+                pfn_eglQuerySurface(dpy, surf, EGL_WIDTH, &width))
+                imgui_render(gl_ctx, width, height);
+        } catch (const std::exception& e) {
+            SPDLOG_ERROR("FHUD EGL swap hook skipped (frame dropped): {}", e.what());
+        } catch (...) {
+            SPDLOG_ERROR("FHUD EGL swap hook skipped (frame dropped)");
+        }
 
         if (fps_limiter)
             fps_limiter->limit(true);

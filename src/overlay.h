@@ -37,7 +37,8 @@ enum EngineTypes
    TOGL,
 
    GAMESCOPE,
-   SDL
+   SDL,
+   VIRGL
 };
 
 /** FusionHUD 专用的三档字体（由 font.cpp 依 kMax/kMid/kSmallTextSp 烘焙）。 */
@@ -105,11 +106,11 @@ struct LOAD_DATA {
 inline const char* engine_name(const swapchain_stats& sw_stats) {
    const char* engines[] = {
       "Unknown", "OpenGL", "VULKAN", "DXVK", "VKD3D", "DAMAVAND",
-      "ZINK", "WINED3D", "Feral3D", "ToGL", "GAMESCOPE", "SDL"
+      "ZINK", "WINED3D", "Feral3D", "ToGL", "GAMESCOPE", "SDL", "VirGL"
    };
    const char* engines_short[] = {
       "Unknown", "OGL", "VK", "DXVK", "VKD3D", "DV",
-       "ZINK", "WD3D", "Feral3D", "ToGL", "GS", "SDL"
+       "ZINK", "WD3D", "Feral3D", "ToGL", "GS", "SDL", "VirGL"
    };
 
    auto engine = sw_stats.engine;

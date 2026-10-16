@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <exception>
 #include <spdlog/spdlog.h>
 #include "real_dlsym.h"
 #include "loaders/loader_glx.h"
@@ -127,7 +128,7 @@ EXPORT_C_(void) glXDestroyContext(void *dpy, void *ctx)
 #define GLX_SWAP_INTERVAL_EXT 0x20F1
 #endif
 
-static void do_imgui_swap(void *dpy, void *drawable)
+static void do_imgui_swap_impl(void *dpy, void *drawable)
 {
     static auto last_time = std::chrono::steady_clock::now();
     auto current_time = std::chrono::steady_clock::now();
@@ -217,6 +218,19 @@ static void do_imgui_swap(void *dpy, void *drawable)
         }
         SPDLOG_TRACE("swap buffers: {}x{}", width, height);
         imgui_render(gl_ctx, width, height);
+    }
+}
+
+// 异常保护：GL 绘制失败（虚拟/远程 GPU virgl、软件渲染 llvmpipe 等尤甚）不应
+// 拖垮宿主进程，丢掉本帧 HUD 即可，原画面照常 present。
+static void do_imgui_swap(void *dpy, void *drawable)
+{
+    try {
+        do_imgui_swap_impl(dpy, drawable);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("FHUD GL swap hook skipped (frame dropped): {}", e.what());
+    } catch (...) {
+        SPDLOG_ERROR("FHUD GL swap hook skipped (frame dropped)");
     }
 }
 

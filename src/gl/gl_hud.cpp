@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cctype>
 #include <functional>
 #include <thread>
 #include <string>
@@ -127,7 +128,30 @@ void imgui_create(gl_context *ctx, const gl_wsi plat)
     std::string vendor = (char*)glGetString(GL_VENDOR);
     SPDLOG_DEBUG("vendor: {}, deviceName: {}", vendor, deviceName);
     sw_stats.deviceName = deviceName;
-    if (vendor.find("AMD") != std::string::npos
+    // ---- virgl / 虚拟 GPU 识别 ----
+    // virgl(virtio-gpu) 客户端侧就是普通 GL（Mesa virpipe 驱动），由本 GL 层负责绘制；
+    // 但它的 GL_VENDOR 往往是 "Mesa"/"virgl"，会被下面的 else 分支误判定成 NVIDIA(0x10de)。
+    // 这里显式识别，并把引擎标记为 VirGL。可用 MANGOHUD_GL_FORCE_VIRGL=1 强制启用。
+    const bool is_virgl = [&]() {
+        const char* force = getenv("MANGOHUD_GL_FORCE_VIRGL");
+        if (force && *force && *force != '0')
+            return true;
+        auto has = [](std::string t, const char* k) {
+            for (auto& c : t) c = (char)tolower((unsigned char)c);
+            std::string key(k);
+            for (auto& c : key) c = (char)tolower((unsigned char)c);
+            return t.find(key) != std::string::npos;
+        };
+        return has(vendor, "virgl") || has(deviceName, "virgl")
+            || has(vendor, "virtio") || has(deviceName, "virtio")
+            || has(deviceName, "virpipe");
+    }();
+    if (is_virgl) {
+        vendorID = 0x1af4;   // Red Hat / virtio，避免落入 NVIDIA 分支
+        sw_stats.engine = EngineTypes::VIRGL;
+        SPDLOG_INFO("FHUD: virgl/virtio renderer detected (vendor: {}, device: {})",
+                    vendor, deviceName);
+    } else if (vendor.find("AMD") != std::string::npos
     || deviceName.find("AMD") != std::string::npos
     || deviceName.find("Radeon") != std::string::npos
     || deviceName.find("NAVI") != std::string::npos) {
