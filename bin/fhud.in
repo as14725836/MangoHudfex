@@ -109,6 +109,61 @@ if [ -n "${LD_PRELOAD:-}" ]; then
     LD_PRELOAD="$_pre"
 fi
 
+# ---- bionic 兼容代理层 ----
+# wine 会调起 Termux(bionic) 的小工具（如 ntlm_auth），它们继承了本脚本注入的
+# glibc LD_PRELOAD，bionic 链接器无法加载，报 “CANNOT LINK EXECUTABLE ... libc.so.6”。
+# 这里为这些工具生成同名代理脚本：先剔除 glibc 预载/库路径，再执行真身。
+# 关闭：FHUD_NO_PROXY=1        自定义清单：FHUD_PROXY_TOOLS="ntlm_auth ..."
+if [ "${FHUD_NO_PROXY:-0}" != "1" ]; then
+    _fhud_proxy_tools="${FHUD_PROXY_TOOLS:-ntlm_auth}"
+    _fhud_proxy_dir="${TMPDIR:-/tmp}/.fhud-proxy"
+    if mkdir -p "$_fhud_proxy_dir" 2>/dev/null; then
+        for _fhud_tool in $_fhud_proxy_tools; do
+            _fhud_tpl="$_fhud_proxy_dir/$_fhud_tool"
+            cat > "$_fhud_tpl" <<'FHUD_PROXY_EOF'
+#!/bin/sh
+# FHUD bionic proxy: strip glibc preload/libpath, then run the real tool.
+_me=${0##*/}
+_self_dir=${0%/*}
+_oldifs=$IFS
+IFS=':'
+_newpre=""
+for _p in ${LD_PRELOAD:-}; do
+    case "$_p" in
+        *libFHUD*|*libMangoHud*|*/mangohud/*|*/fhud/*|'') ;;
+        *) _newpre="${_newpre:+$_newpre:}$_p" ;;
+    esac
+done
+_newlib=""
+for _p in ${LD_LIBRARY_PATH:-}; do
+    case "$_p" in
+        */usr/glibc/*|*/usr/glibc|'') ;;
+        *) _newlib="${_newlib:+$_newlib:}$_p" ;;
+    esac
+done
+IFS=$_oldifs
+if [ -n "$_newpre" ]; then export LD_PRELOAD="$_newpre"; else unset LD_PRELOAD; fi
+if [ -n "$_newlib" ]; then export LD_LIBRARY_PATH="$_newlib"; else unset LD_LIBRARY_PATH; fi
+_real=""
+_oldifs=$IFS
+IFS=':'
+for _d in ${PATH:-}; do
+    [ "$_d" = "$_self_dir" ] && continue
+    if [ -x "$_d/$_me" ] && [ ! -d "$_d/$_me" ]; then _real="$_d/$_me"; break; fi
+done
+IFS=$_oldifs
+if [ -z "$_real" ]; then
+    echo "fhud-proxy: real '$_me' not found in PATH" >&2
+    exit 127
+fi
+exec "$_real" "$@"
+FHUD_PROXY_EOF
+            chmod +x "$_fhud_tpl" 2>/dev/null || true
+        done
+        PATH="$_fhud_proxy_dir:$PATH"
+        export PATH
+    fi
+fi
 if [ "$disable_preload" = true ]; then
     exec env MANGOHUD=1 "$@"
 else
