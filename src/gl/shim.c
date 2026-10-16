@@ -8,10 +8,29 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #ifndef RTLD_DEEPBIND
 #define RTLD_DEEPBIND 0
 #endif
+
+/* FHUD_SHIM_SELFCHECK -------------------------------------------------------
+ * Print one line the moment ld.so loads this shim, so it is unambiguous
+ * whether the LD_PRELOAD entry actually took effect. Launchers can silently
+ * drop or reorder LD_PRELOAD (wine/box64 wrappers, native GL stacks that set
+ * their own libGL.so.1 first); without this line a missing HUD gives no clue.
+ * Silence with FHUD_SHIM_DEBUG=0.
+ */
+__attribute__((constructor))
+static void fhud_shim_selfcheck(void)
+{
+    const char *dbg = getenv("FHUD_SHIM_DEBUG");
+    if (dbg && dbg[0] == '0')
+        return;
+
+    fprintf(stderr, "shim: FHUD shim loaded (pid=%d)\n", (int) getpid());
+    fflush(stderr);
+}
 
 static void* handle = NULL;
 static bool mangoHudLoaded = false;

@@ -169,14 +169,41 @@ if [ "$disable_preload" = true ]; then
 else
     # Make sure we don't append mangohud lib multiple times
     # otherwise, this could cause issues with the steam runtime
+    # FHUD_SHIM_PREPEND
+    # First strip any pre-existing FHUD shim entry (an older launcher or a
+    # wrapper script may have appended it) so the injection below is the
+    # single, controlled occurrence. Keeps this idempotent and avoids
+    # duplicate preloads under the Steam runtime.
     case ":${LD_PRELOAD-}:" in
         (*:$FHUD_LIB_NAME:*)
+            _fhud_pre=""
+            _fhud_oldifs=$IFS; IFS=':'
+            for _fhud_p in ${LD_PRELOAD-}; do
+                case "$_fhud_p" in
+                    "$FHUD_LIB_NAME"|*/libFHUD_shim.so)
+                        ;;
+                    '')
+                        ;;
+                    *)
+                        _fhud_pre="${_fhud_pre:+$_fhud_pre:}$_fhud_p"
+                        ;;
+                esac
+            done
+            IFS=$_fhud_oldifs
+            LD_PRELOAD="$_fhud_pre"
+            unset _fhud_pre _fhud_oldifs _fhud_p
             ;;
-        (*)
-            # Preload using the plain filenames of the libs, the dynamic linker will
-            # figure out whether the 32 or 64 bit version should be used
-            LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}${FHUD_LIB_NAME}"
     esac
+
+    # IMPORTANT: PREPEND, do not append.
+    # ld.so resolves global symbols in LD_PRELOAD order. Native OpenGL stacks
+    # (Mesa virpipe/virgl) and launchers/games that set their own LD_PRELOAD
+    # preload a libGL.so.1 which *also* exports glXSwapBuffers, glXGetProcAddress
+    # and friends. If our shim sits behind it, those exports shadow the shim's
+    # hooks and the HUD silently never draws (upstream README: "Some Linux
+    # native OpenGL games override LD_PRELOAD and stops MangoHud from working").
+    # Putting the shim first restores hook priority.
+    LD_PRELOAD="${FHUD_LIB_NAME}${LD_PRELOAD:+:$LD_PRELOAD}"
 
     exec env MANGOHUD=1 LD_PRELOAD="${LD_PRELOAD}" "$@"
 fi
