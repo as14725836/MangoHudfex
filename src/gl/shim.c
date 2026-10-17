@@ -9,27 +9,66 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #ifndef RTLD_DEEPBIND
 #define RTLD_DEEPBIND 0
 #endif
 
-/* FHUD_SHIM_SELFCHECK -------------------------------------------------------
- * Print one line the moment ld.so loads this shim, so it is unambiguous
- * whether the LD_PRELOAD entry actually took effect. Launchers can silently
- * drop or reorder LD_PRELOAD (wine/box64 wrappers, native GL stacks that set
- * their own libGL.so.1 first); without this line a missing HUD gives no clue.
- * Silence with FHUD_SHIM_DEBUG=0.
+/* FHUD_SHIM_TRACE -----------------------------------------------------------
+ * Self-check + entry tracing.
+ *
+ * FHUD_SHIM_DEBUG=0            -> mute everything here
+ * unset                        -> write to /sdcard/Download/fhud_shim.log (+stderr)
+ * FHUD_SHIM_DEBUG=/some/path   -> write to that path instead
+ *
+ * Two distinct lines:
+ *   "loaded"  printed from the constructor => ld.so really mapped this shim.
+ *   "GL entry glXSwapBuffers" printed from inside the hook => the app's
+ *            glXSwapBuffers call actually reached us (not shadowed).
+ * If you see "loaded" but never a "GL entry", another LD_PRELOAD lib (e.g. a
+ * Mesa libGL.so.1) is still winning symbol resolution ahead of the shim.
  */
+static int fhud_trace_fd = -2; /* -2 = not resolved yet */
+
+static void fhud_trace_open(void)
+{
+    if (fhud_trace_fd != -2)
+        return;
+    const char *dbg = getenv("FHUD_SHIM_DEBUG");
+    if (dbg && dbg[0] == '0')
+    {
+        fhud_trace_fd = -1;
+        return;
+    }
+    const char *path = (dbg && *dbg && dbg[0] != '0' && strcmp(dbg, "1") != 0)
+                       ? dbg : "/sdcard/Download/fhud_shim.log";
+    fhud_trace_fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fhud_trace_fd < 0)
+        fhud_trace_fd = -1;
+}
+
+static void fhud_trace(const char *line)
+{
+    const char *mute = getenv("FHUD_SHIM_DEBUG");
+    if (mute && mute[0] == '0')
+        return;
+    fhud_trace_open();
+    if (fhud_trace_fd >= 0)
+    {
+        char buf[256];
+        int n = snprintf(buf, sizeof(buf), "[pid=%d] %s\n", (int) getpid(), line);
+        if (n > 0)
+            (void) write(fhud_trace_fd, buf, (size_t) n);
+    }
+    fprintf(stderr, "shim: %s (pid=%d)\n", line, (int) getpid());
+    fflush(stderr);
+}
+
 __attribute__((constructor))
 static void fhud_shim_selfcheck(void)
 {
-    const char *dbg = getenv("FHUD_SHIM_DEBUG");
-    if (dbg && dbg[0] == '0')
-        return;
-
-    fprintf(stderr, "shim: FHUD shim loaded (pid=%d)\n", (int) getpid());
-    fflush(stderr);
+    fhud_trace("FHUD shim loaded");
 }
 
 static void* handle = NULL;
@@ -151,12 +190,14 @@ static void loadMangoHud() {
 
 #define CREATE_FWD_VOID(name, params, ...) \
     void name params { \
+        if (getenv("FHUD_SHIM_TRACE_ENTRY")) fhud_trace("GL entry " #name); \
         loadMangoHud(); \
         void (*p##name) params = real_dlsym(handle, #name); \
         if (p##name) p##name(__VA_ARGS__); \
     }
 #define CREATE_FWD(ret_type, name, params, ...) \
     ret_type name params { \
+        if (getenv("FHUD_SHIM_TRACE_ENTRY")) fhud_trace("GL entry " #name); \
         loadMangoHud(); \
         ret_type (*p##name) params = real_dlsym(handle, #name); \
         if (p##name) return p##name(__VA_ARGS__); \
