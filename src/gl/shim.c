@@ -59,7 +59,10 @@ static void fhud_trace(const char *line)
         char buf[256];
         int n = snprintf(buf, sizeof(buf), "[pid=%d] %s\n", (int) getpid(), line);
         if (n > 0)
-            (void) write(fhud_trace_fd, buf, (size_t) n);
+        {
+            ssize_t w = write(fhud_trace_fd, buf, (size_t) n);
+            (void) w;
+        }
     }
     fprintf(stderr, "shim: %s (pid=%d)\n", line, (int) getpid());
     fflush(stderr);
