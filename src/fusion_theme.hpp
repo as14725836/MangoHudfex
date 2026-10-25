@@ -361,6 +361,27 @@ inline float fusionBgAlpha()
 }
 
 /**
+ * BAR 档（横排单行顶栏）的面板背景不透明度：默认 0.55。
+ *
+ * 与其它档位不同，BAR 是一条贴在画面顶部的窄条 —— 如果也用「全透明」，
+ * 就只剩一行悬浮的文字，在深色/高对比画面上缺少承载感（用户反馈
+ * 「少一层卡片效果」）。这里给一个默认可见的卡片底，让 draw() 里的
+ * 外投影 / 圆角填充 / 内高光一起生效。
+ *
+ * 仍可用 MANGOHUD_FUSION_BG_ALPHA 覆盖（含 0 = 回到全透明）。
+ */
+inline float fusionBarBgAlpha()
+{
+    if (const char* e = std::getenv("MANGOHUD_FUSION_BG_ALPHA")) {
+        if (*e) {
+            const float v = static_cast<float>(std::atof(e));
+            return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+        }
+    }
+    return 0.55f;
+}
+
+/**
  * FusionHUD 主题 → MangoHud 配置键值表。
  * 交给 overlay_params.cpp 的 add_to_options() 走**正常解析路径**写入，
  * 保证不会被后续的配置解析覆盖。
@@ -396,8 +417,11 @@ fusionThemeOptions(FusionSize size, float bg_opacity = kBgOpacityDefault,
     // ---- 面板：纯黑底（上游 Color.argb(bgOpacity*255, 0,0,0)）+ 圆角 8，无文字描边 ----
     o.emplace_back("background_color", kPanelHex);
     // 默认全透明（详见 fusionBgAlpha()）；bg_opacity 参数保留仅为兼容旧调用
+    // BAR 例外：窄条必须有承载感，否则只剩一行悬空文字 —— 见 fusionBarBgAlpha()
     (void)bg_opacity;
-    o.emplace_back("background_alpha", std::to_string(fusionBgAlpha()));
+    o.emplace_back("background_alpha",
+                   std::to_string(size == FusionSize::BAR ? fusionBarBgAlpha()
+                                                          : fusionBgAlpha()));
     o.emplace_back("alpha", "1.0");
     o.emplace_back("round_corners", std::to_string((int)std::lround(kBgRadiusSp)));
     o.emplace_back("text_outline", "0");

@@ -816,6 +816,7 @@ struct Frame {
     std::vector<Rect> tiles;
     bool has_pill = false;
     Rect pill;
+    bool has_bar = false;   // BAR 档：横排单行顶栏（draw() 用它选真胶囊圆角）
     bool has_graph = false;
     Rect graph;
     float content_w = 0.0f;
@@ -1904,7 +1905,8 @@ inline std::vector<std::vector<Span>>& seg_pool(int slot) {
 inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
     const float px = f.M.sp(11.5f);
     const float unit_px = px * 0.78f;
-    const float pad = f.M.gsp(9.0f);
+    const float pad = f.M.gsp(9.0f);          // 上下内边距
+    const float pad_x = f.M.gsp(14.0f);       // 左右内边距：胶囊端头是半圆，需要更多留白
     const float seg_gap = f.M.gsp(6.5f);    // 分隔符左右各一份
     const float graph_gap = f.M.gsp(8.0f);
     const float gw = f.M.sp(80.0f);         // 折线区宽度
@@ -2033,13 +2035,11 @@ inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
 
     const float lh = f.M.line_h(px);
     const float inner_h = std::max(lh, want_graph ? gh : 0.0f);
-
-    f.content_w = pad + text_w + (want_graph ? graph_gap + gw : 0.0f) + f.M.sp(kRightInsetSp);
+    f.content_w = pad_x * 2.0f + text_w + (want_graph ? graph_gap + gw : 0.0f);
     f.content_h = pad * 2.0f + inner_h;
-
     // ---- 落字：所有段落共用一条基线 ----
     const float baseline = pad + (inner_h - lh) * 0.5f + f.M.ascent(px);
-    float x = pad;
+    float x = pad_x;
     for (size_t i = 0; i < segs.size(); ++i) {
         if (i > 0) {
             f.place(x + seg_gap, baseline, std::vector<Span>{Span{sep, kColUnit, unit_px}});
@@ -2047,14 +2047,15 @@ inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
         }
         x = f.place(x, baseline, segs[i]);
     }
-
     // ---- 折线区：行尾，垂直居中 ----
     if (want_graph) {
-        const float gx = pad + text_w + graph_gap;
+        const float gx = pad_x + text_w + graph_gap;
         const float gy = pad + (inner_h - gh) * 0.5f;
         f.graph = Rect{gx, gy, gx + gw, gy + gh};
         f.has_graph = true;
     }
+    // 标记本帧是 BAR 形态：draw() 据此改用真胶囊圆角（端头半圆）
+    f.has_bar = true;
 }
 
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
@@ -2062,6 +2063,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
     f.tiles.clear();
     f.has_graph = false;
     f.has_pill = false;
+    f.has_bar = false;
     f.content_w = 0.0f;
     f.content_h = 0.0f;
     // Frame 现在跨帧复用（见 overlay.cpp 的 static Frame），place() 里这两个字段
@@ -2166,9 +2168,11 @@ inline void draw(const Frame& f, const overlay_params& p, ImDrawList* dl, ImVec2
     };
 
     // 圆角：Pill 用 height/2 的真圆（胶囊）；其余用按短边比例放大的 squircle
+    // BAR 是一条窄高比很大的横条，同样用 height/2 的真圆 —— 端头呈半圆，
+    // 看起来才像一张「卡片 / 药丸条」，而不是被切平的长方条。
     float radius;
     float sq_n;
-    if (f.has_pill) {
+    if (f.has_pill || f.has_bar) {
         radius = (y1 - y0) * kPillRadiusRatio;
         sq_n = 2.0f;
     } else {
