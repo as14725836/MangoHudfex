@@ -469,7 +469,7 @@ Parameters that are enabled by default have to be explicitly disabled. These (cu
 | `vulkan_present_mode=<name>`       | Override Vulkan [present mode](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkPresentModeKHR.html) using specified mode name (takes precedence over `vsync=`) |
 | `vulkan_driver`                    | Display used Vulkan driver (radv/amdgpu-pro/amdvlk)                                   |
 | `width=`<br>`height=`              | Customizable HUD dimensions (in pixels)                                              |
-| `win_fg`                           | Display the win-fg (Vulkan frame generation layer) frame rate as `real->total` (e.g. `60->120`) |
+| `win_fg`                           | Display the win-fg (Vulkan frame generation layer) frame count as `real->total` (e.g. `541->1083`). While win-fg is actually producing frames, the normal FPS / AVG / frametime group is hidden entirely so the HUD shows only one frame count (no duplicate raw FPS) |
 | `wine_color`                       | Change color of the wine/proton text                                                  |
 | `wine`                             | Show current Wine or Proton version in use                                            |
 | `winesync`                         | Show wine sync method in use                                                          |

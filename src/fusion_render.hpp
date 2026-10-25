@@ -656,6 +656,23 @@ struct Snapshot {
     std::vector<int> core_pct, core_mhz;
 };
 
+/** win-fg 插帧层是否正在工作。
+ *  判定依据：共享内存里 enabled 为真（winfg_on），且已经有插帧产出
+ *  （winfg_total > 0），避免"开启了但还没出帧"的瞬间把 FPS 显示成 0。
+ *  插帧生效后所有档位的 FPS 一律显示插帧后的总帧率，原始帧数不再出现。 */
+inline bool fg_active(const Snapshot& s) {
+    return s.winfg_on && s.winfg_total > 0.0f;
+}
+
+/** win-fg 帧数文本："541->1083"（真实帧 -> 插帧后总帧）。
+ *  只在 fg_active() 为真时有意义；PILL / MINIMAL 这类没有独立行的档位
+ *  用它顶替原来的大号 FPS 数字，保证全 HUD 只出现这一组帧数。 */
+inline std::string fg_pair_text(const Snapshot& s) {
+    char buf[48];
+    std::snprintf(buf, sizeof(buf), "%.0f->%.0f", s.winfg_real, s.winfg_total);
+    return std::string(buf);
+}
+
 /** 行容器复用池。
  *
  *  性能：build_full / build_tiles / build_pill / build_mega 每次调用都会
@@ -1106,7 +1123,9 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         if (any)
             add(hud_i18n::tr("BAT"), kColBat, std::move(v));
     }
-    if (c.fps) {
+    // 帧率：win-fg 插帧工作时整组隐藏（由下方 win-fg 行显示插帧帧数），
+    // 避免同时出现原帧和插帧两组帧数。
+    if (c.fps && !fg_active(s)) {
         std::vector<Span> v;
         for (const Span& x : num_unit_f(s.fps, "FPS", row_px, unit_px))
             v.push_back(x);
@@ -1114,7 +1133,6 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         for (const Span& x : num_unit_f(1000.0f / std::max(s.fps, 1.0f), "ms", row_px, unit_px))
             v.push_back(x);
         add(api_label(s, c).c_str(), kColFps, std::move(v));
-
         add(hud_i18n::tr("AVG"), kColLo, num_unit_f(s.fps_avg, "FPS", row_px, unit_px));
         // 1% / 0.1% / 0.01% 三行按需求移除（要恢复就把下面四行放开）
         // add("1%", kColLo, num_unit_f(s.low1, "FPS", row_px, unit_px));
@@ -1133,20 +1151,18 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
     if (!f.prog_text.empty())
         add(hud_i18n::tr("Program"), kColAccent,
             std::vector<Span>{Span{f.prog_text, kColProg, row_px}});
-
-    // win-fg（Vulkan 插帧层）：真实帧 -> 插帧后总帧，例如 "60 → 120"。
-    // 只有 win-fg 层在跑且暴露了共享内存计数时才显示这一行；
+    // win-fg（Vulkan 插帧层）：真实帧 -> 插帧后总帧，例如 "541→1083"。
+    // 插帧工作时上面 FPS / AVG 行已隐藏，全 HUD 只剩这一组帧数。
     // 放在“程序”行下面（最底部，型号行稍后仍会插到最前面）。
-    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.0f→%.0f", s.winfg_real, s.winfg_total);
+    if (c.win_fg && fg_active(s)) {
         std::vector<Span> v;
-        v.push_back(Span{buf, 0xFFBFFF66, row_px});
+        v.push_back(Span{fg_pair_text(s), 0xFFBFFF66, row_px});
         v.push_back(gap(unit_px));
         v.push_back(Span{"FPS", kColUnit, unit_px});
         // 标签色 #e5d94d（黄），与 FPS 红 / 其它标签区分开。
         add(hud_i18n::tr("win-fg"), 0xFFE5D94D, std::move(v));
     }
+
 
     if (!model_txt.empty()) {
         float lw = f.M.measure(hud_i18n::tr("GPU"), row_px);
@@ -1187,7 +1203,8 @@ inline void build_full(Frame& f, const Snapshot& s, const Chips& c) {
         y += h + line_gap;
     }
 
-    if (c.fps && c.graph) {
+    // 帧时间图同样属于原始帧数据，插帧工作时一起隐藏
+    if (c.fps && c.graph && !fg_active(s)) {
         const float ft_px = unit_px * 1.15f;
         const float baseline = y - asc;
         f.place(pad, baseline, std::vector<Span>{Span{hud_i18n::tr("Frametime"), kColFps, ft_px}});
@@ -1224,7 +1241,8 @@ inline void build_tiles(Frame& f, const Snapshot& s, const Chips& c) {
     std::vector<Tile> tiles;
     auto push = [&](Tile t) { tiles.push_back(std::move(t)); };
 
-    if (c.fps) {
+    // FPS 磁贴：插帧工作时隐藏，避免与 win-fg 行重复
+    if (c.fps && !fg_active(s)) {
         Tile t;
         t.key = hud_i18n::tr("FPS");
         t.key_col = kColFps;
@@ -1449,8 +1467,15 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
     const float mid_gap = f.M.gsp(12.0f);
     const float stk_line_gap = f.M.gsp(3.0f);
 
-    std::vector<Span> left = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
-                              Span{"fps", kColDim, big_unit_px}};
+    // 左侧大数字：插帧工作时换成 "541→1083"，不再单独显示原帧
+    std::vector<Span> left;
+    if (fg_active(s)) {
+        left = {Span{fg_pair_text(s), kColNum, big_px * 0.62f},
+                Span{"fps", kColDim, big_unit_px}};
+    } else {
+        left = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
+                Span{"fps", kColDim, big_unit_px}};
+    }
 
     std::vector<std::vector<Span>> stack;
     const std::string model_txt =
@@ -1496,18 +1521,31 @@ inline void build_pill(Frame& f, const Snapshot& s, const Chips& c) {
             stack.push_back(std::move(l));
     }
     {
-        std::vector<Span> l;
-        l.push_back(Span{fmt_f(1000.0f / std::max(s.fps, 1.0f), 5, 1) + "ms", kColDim, stk_px});
-        if (c.vram && s.vram_used >= 0.0f) {
-            l.push_back(Span{" · ", kColDim, stk_px});
+        // 帧时间属于原始帧数据，插帧工作时这一行不再输出
+        if (!fg_active(s)) {
+            std::vector<Span> l;
+            l.push_back(Span{fmt_f(1000.0f / std::max(s.fps, 1.0f), 5, 1) + "ms", kColDim, stk_px});
+            if (c.vram && s.vram_used >= 0.0f) {
+                l.push_back(Span{" · ", kColDim, stk_px});
+                std::string txt = gib(s.vram_used) + " vram";
+                if (s.vram_pct >= 0)
+                    txt += " " + std::to_string(s.vram_pct) + "%";
+                if (s.mem_clock > 0)
+                    txt += " " + std::to_string(s.mem_clock) + "MHz";
+                l.push_back(Span{txt, kColDim, stk_px});
+            }
+            stack.push_back(std::move(l));
+        } else if (c.vram && s.vram_used >= 0.0f) {
+            // 插帧时仍要显示显存，只是去掉 ms
+            std::vector<Span> l;
             std::string txt = gib(s.vram_used) + " vram";
             if (s.vram_pct >= 0)
                 txt += " " + std::to_string(s.vram_pct) + "%";
             if (s.mem_clock > 0)
                 txt += " " + std::to_string(s.mem_clock) + "MHz";
             l.push_back(Span{txt, kColDim, stk_px});
+            stack.push_back(std::move(l));
         }
-        stack.push_back(std::move(l));
     }
 
     const std::string api_str = api_label(s, c);
@@ -1569,8 +1607,15 @@ inline void build_minimal(Frame& f, const Snapshot& s, const Chips& c) {
     const float pad = f.M.gsp(10.0f);
     const float line_gap = f.M.gsp(6.0f);
 
-    const std::vector<Span> big = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
-                                   Span{"fps", kColDim, big_unit_px}};
+    // 大号帧数：插帧工作时换成 "541→1083"
+    std::vector<Span> big;
+    if (fg_active(s)) {
+        big = {Span{fg_pair_text(s), kColNum, big_px * 0.62f},
+               Span{"fps", kColDim, big_unit_px}};
+    } else {
+        big = {Span{fmt_f(s.fps, 5, 1), kColNum, big_px},
+               Span{"fps", kColDim, big_unit_px}};
+    }
     std::vector<Span> sub;
     sub.push_back(Span{"1% ", kColDim, sub_px});
     sub.push_back(Span{s.low1 > 0.0f ? fmt_f(s.low1, 5, 1) : pad_dash(5), kColFps, sub_px});
@@ -1745,7 +1790,8 @@ inline void build_mega(Frame& f, const Snapshot& s, const Chips& c) {
         if (any)
             right.push_back(Row{Span{hud_i18n::tr("BAT"), kColBat, row_px}, std::move(v), false});
     }
-    if (c.fps) {
+    // FPS 右侧列：插帧工作时整组隐藏（只保留 win-fg 行）
+    if (c.fps && !fg_active(s)) {
         std::vector<Span> v;
         for (const Span& x : num_unit_f(s.fps, "FPS", row_px, unit_px))
             v.push_back(x);
@@ -1996,8 +2042,9 @@ inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
         }
     }
 
-    // 8) 帧率
-    if (c.fps) {
+    // 8) 帧率：win-fg 插帧工作时这一行整段隐藏，帧数只由下面的 FG 行显示，
+    // 避免同时出现两组（原帧 + 插帧后）帧数。
+    if (c.fps && !fg_active(s)) {
         std::vector<Span> v;
         v.push_back(lab("FPS", kColFps));
         v.push_back(sp_());
@@ -2010,8 +2057,9 @@ inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
         push(std::move(v));
     }
 
-    // 9) win-fg 插帧：真实帧 → 插帧后总帧
-    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
+    // 9) win-fg 插帧：真实帧 -> 插帧后总帧（如 "541->1083"）。
+    // 插帧工作时上面第 8) 段已隐藏，全 HUD 只剩这一组帧数。
+    if (c.win_fg && fg_active(s)) {
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%.0f->%.0f", s.winfg_real, s.winfg_total);
         std::vector<Span> v;
