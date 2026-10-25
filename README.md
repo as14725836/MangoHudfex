@@ -762,6 +762,7 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_pill` | Pill —— 胶囊布局 |
 | `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
 | `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
+| `fusion_bar` | Bar —— **横排单行顶栏**：所有指标排成一行、段间用竖线分隔、右侧带折线；建议配合 `position=top-center`（等价于 `preset=15`，会自动设成顶部居中） |
 | `fusion_outline` | 面板描边强度，浮点，**默认 `0`（不画紫边）**；设为 `1.0` ≈ 3.5px |
 | `fusion_scale` | FHUD 整体等比例缩放，浮点，默认 `1.0`（快捷键 Shift+加号/减号 ±10%/步） |
 | `gl_hud_bind_default_fb` | OpenGL(GL/GLX) 路径下把 HUD 画到窗口默认帧缓冲（而非应用当前的 FBO），**默认关闭**；Wine + Mesa 下 HUD 闪烁时可开启 |
