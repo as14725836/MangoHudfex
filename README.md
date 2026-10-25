@@ -765,6 +765,8 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_bar` | Bar —— **横排单行顶栏**：所有指标排成一行、段间用竖线分隔、右侧带折线；建议配合 `position=top-center`（等价于 `preset=15`，会自动设成顶部居中） |
 | `fusion_outline` | 面板描边强度，浮点，**默认 `0`（不画紫边）**；设为 `1.0` ≈ 3.5px |
 | `fusion_scale` | FHUD 整体等比例缩放，浮点，默认 `1.0`（快捷键 Shift+加号/减号 ±10%/步） |
+| `MANGOHUD_FUSION_SCALE_BY_HEIGHT` | **环境变量**，设为 `1` 打开「按画面高度自动等比缩放」：HUD 随渲染画面高度等比放大/缩小，使视觉占比恒定。**默认关闭** |
+| `MANGOHUD_FUSION_REF_HEIGHT` | **环境变量**，等比缩放的基准画面高度，默认 `1080`（1080p 下系数 1.0，2160p 下 2.0，720p 下 ≈0.67，夹在 `0.6~2.5`） |
 | `gl_hud_bind_default_fb` | OpenGL(GL/GLX) 路径下把 HUD 画到窗口默认帧缓冲（而非应用当前的 FBO），**默认关闭**；Wine + Mesa 下 HUD 闪烁时可开启 |
 
 ### FEX-Emu 统计（`fex_stats`）的共享内存路径

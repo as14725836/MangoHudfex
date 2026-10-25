@@ -1476,6 +1476,15 @@ void render_imgui(swapchain_stats& data, struct overlay_params& params, ImVec2& 
          fusionhud::fr::Options fo;
          fo.scale = (real_params->font_scale > 0.0f ? real_params->font_scale : 1.0f)
                   * (real_params->fusion_scale > 0.0f ? real_params->fusion_scale : 1.0f);
+         // 按画面高度自动等比缩放（默认关闭，MANGOHUD_FUSION_SCALE_BY_HEIGHT=1 开启）。
+         // 为什么放在这里：fo 是本帧局部对象，每帧重建，所以系数不会被累积；
+         // 下面 autofit 的 /= fit 也只影响本帧，二者串联而不互相污染。
+         // DisplaySize = 当前渲染画面尺寸（= 游戏分辨率/framebuffer），
+         // 因此窗口或分辨率一变，系数当帧就跟着变。
+         if (fusionhud::fusionScaleByHeightEnabled()) {
+            const float disp_h = ImGui::GetIO().DisplaySize.y;
+            fo.scale *= fusionhud::fusionHeightToScale(disp_h, fusionhud::fusionRefHeight());
+         }
          // 用专门烘焙的大字号字体（见 font.cpp）：ImGui 放大绘制会模糊，
          // 而 FusionHUD 的大号 FPS 远大于主字体，必须走这张图集。
          // 三档字体（见 font.cpp）：ImGui 放大绘制会发虚、缩小绘制会变软，

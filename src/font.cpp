@@ -445,10 +445,23 @@ void create_fonts(ImFontAtlas* font_atlas, const overlay_params& params, ImFont*
    const float fusion_scale = params.font_scale > 0.0f ? params.font_scale : 1.0f;
    auto bake_size = [&](float sp_value) {
       float px = sp_value * fusionhud::kSpToPx * fusion_scale;
+      // 开了「按画面高度等比缩放」时，绘制期 fo.scale 会被放大到 kScaleMaxH 倍。
+      // 若字体档位不跟着预留，pick() 就只能拿较小档位上采样绘制 —— 放大后字形发虚。
+      // 这里按上限一次性预留（图集变大，但只有用户显式开启时才付出这份显存）。
+      if (fusionhud::fusionScaleByHeightEnabled()) {
+         // 实际绘制倍数 = params.font_scale × params.fusion_scale × heightScale
+         // （见 overlay.cpp 里 fo.scale 的组装）。本地变量 fusion_scale 只等于
+         // params.font_scale，所以这里还要补上 fusion_scale 参数本身。
+         const float fs_param = params.fusion_scale > 0.0f ? params.fusion_scale : 1.0f;
+         px *= fusionhud::kScaleMaxH * fs_param;
+      }
       if (px < font_size)
          px = font_size;
-      if (px > 96.0f)
-         px = 96.0f;
+      // 上限：预留态下需要容纳更大的字号。22sp×2.1×2.5 ≈ 116px 是理论最大，
+      // 取 128 刚好不裁剪。图集若吃紧，用 MANGOHUD_FUSION_TEX_WIDTH 调宽纹理。
+      const float cap = fusionhud::fusionScaleByHeightEnabled() ? 128.0f : 96.0f;
+      if (px > cap)
+         px = cap;
       return px;
    };
    const float size_big = bake_size(fusionhud::kMaxTextSp);

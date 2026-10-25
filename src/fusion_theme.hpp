@@ -381,6 +381,60 @@ inline float fusionBarBgAlpha()
     return 0.55f;
 }
 
+// ============================================================================
+// 按画面高度的自动等比缩放
+//
+// 背景：FHUD 的所有尺寸都是"固定像素" —— sp(v) = v * kSpToPx * scale，
+// scale 只来自 font_scale / fusion_scale，**公式里没有画面尺寸**。所以把游戏
+// 窗口（或分辨率）放大时，HUD 像素尺寸不变，视觉占比反而变小：BAR 档在 1080p
+// 下占约 5.2% 画面高，2160p 下只剩 2.6%，顶栏会显得很"秀气"。
+//
+// 这里提供一个可选的"以画面高度为基准"的等比缩放：
+//   scale_h = clamp(display_h / ref_h, kScaleMinH, kScaleMaxH)
+// 默认 ref_h = 1080，即 1080p 下系数 1.0、2160p 下 2.0、720p 下 0.667。
+//
+// 默认**关闭**（MANGOHUD_FUSION_SCALE_BY_HEIGHT=1 才开启），因为：
+//   1) 有人就喜欢 HUD 在高分辨率下小而精致；
+//   2) 各档位的历史表现（1080p 基准）不能因为这次改动而变。
+// 开启后与既有的 autofit（超屏等比缩小）是**串联**关系：先按高度放大，
+// 若因此超出画面再被 autofit 压回来，二者互不冲突。
+// ============================================================================
+constexpr float kScaleRefHeight = 1080.0f;  // 基准画面高度：此高度下系数为 1.0
+constexpr float kScaleMinH = 0.60f;         // 下限：再窄的画面也不过度缩字
+constexpr float kScaleMaxH = 2.50f;         // 上限：与字体图集最大烘焙档相称
+
+/** 画面高度 → 等比缩放系数。display_h <= 0（未知）时返回 1.0，即不干预。 */
+inline float fusionHeightToScale(float display_h, float ref_h = kScaleRefHeight)
+{
+    if (!(display_h > 0.0f) || !(ref_h > 0.0f))
+        return 1.0f;
+    float s = display_h / ref_h;
+    if (s < kScaleMinH) s = kScaleMinH;
+    if (s > kScaleMaxH) s = kScaleMaxH;
+    return s;
+}
+
+/** 是否开启按画面高度的自动等比缩放（MANGOHUD_FUSION_SCALE_BY_HEIGHT=1） */
+inline bool fusionScaleByHeightEnabled()
+{
+    if (const char* e = std::getenv("MANGOHUD_FUSION_SCALE_BY_HEIGHT"))
+        return *e && *e != '0';
+    return false;
+}
+
+/** 基准画面高度，可用 MANGOHUD_FUSION_REF_HEIGHT 覆盖（默认 1080） */
+inline float fusionRefHeight()
+{
+    if (const char* e = std::getenv("MANGOHUD_FUSION_REF_HEIGHT")) {
+        if (*e) {
+            const float v = static_cast<float>(std::atof(e));
+            if (v > 0.0f)
+                return v;
+        }
+    }
+    return kScaleRefHeight;
+}
+
 /**
  * FusionHUD 主题 → MangoHud 配置键值表。
  * 交给 overlay_params.cpp 的 add_to_options() 走**正常解析路径**写入，
