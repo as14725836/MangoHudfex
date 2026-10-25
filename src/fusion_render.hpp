@@ -2024,7 +2024,15 @@ inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
     // ---- 宽度：段落 + 分隔符 + 折线区 ----
     const std::string sep = "|";
     const float sep_w = f.M.measure(sep, unit_px);
-    const bool want_graph = c.fps && c.graph;
+    // BAR 默认不画帧时间折线（preset 15 里 frame_timing 已是 0）。
+    // 但配置文件里可能残留 frame_timing=1（比如沿用其它档位的 conf），
+    // 所以这里再加一道开关：MANGOHUD_FUSION_BAR_GRAPH=1 才允许画。
+    // 这样即使用户 conf 没改，顶栏也不会突然多出一条折线把宽度撑开。
+    static const bool bar_graph_optin = [] {
+        const char* e = std::getenv("MANGOHUD_FUSION_BAR_GRAPH");
+        return e && *e && *e != '0';
+    }();
+    const bool want_graph = c.fps && c.graph && bar_graph_optin;
 
     float text_w = 0.0f;
     for (size_t i = 0; i < segs.size(); ++i) {

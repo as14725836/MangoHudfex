@@ -762,7 +762,8 @@ custom_text_center=FusionHUD by The412Banner
 | `fusion_pill` | Pill —— 胶囊布局 |
 | `fusion_minimal` | Minimal —— 极简（仅 FPS / 帧时间 / 低帧） |
 | `fusion_mega` | Mega —— 巨幅（含每核 / Swap / 网络 / 分辨率 / Proton / Wrapper / DX 版本 / 会话时长） |
-| `fusion_bar` | Bar —— **横排单行顶栏**：所有指标排成一行、段间用竖线分隔、右侧带折线；建议配合 `position=top-center`（等价于 `preset=15`，会自动设成顶部居中） |
+| `fusion_bar` | Bar —— **横排单行顶栏**：所有指标排成一行、段间用竖线分隔；建议配合 `position=top-center`（等价于 `preset=15`，会自动设成顶部居中）。**默认不画帧时间折线** |
+| `MANGOHUD_FUSION_BAR_GRAPH` | **环境变量**，设为 `1` 才在 BAR 右侧画帧时间折线（默认关闭，顶栏更短更清爽） |
 | `fusion_outline` | 面板描边强度，浮点，**默认 `0`（不画紫边）**；设为 `1.0` ≈ 3.5px |
 | `fusion_scale` | FHUD 整体等比例缩放，浮点，默认 `1.0`（快捷键 Shift+加号/减号 ±10%/步） |
 | `MANGOHUD_FUSION_SCALE_BY_HEIGHT` | **环境变量**，设为 `1` 打开「按画面高度自动等比缩放」：HUD 随渲染画面高度等比放大/缩小，使视觉占比恒定。**默认关闭** |

@@ -1557,7 +1557,10 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
       // === FusionHUD BAR —— 横排单行顶栏，贴屏幕顶部水平居中 ===
       case 15:
          add_to_options(params, "fps", "1");
-         add_to_options(params, "frame_timing", "1");
+         // BAR 右侧不再画帧时间折线：顶栏是"一眼扫过"的窄条，折线在
+         // 这么矮的高度里既看不清趋势，又白占 80sp 宽度把整条顶栏拉长。
+         // 需要折线时显式加 frame_timing=1 即可（build_bar 会重新算宽度）。
+         add_to_options(params, "frame_timing", "0");
          add_to_options(params, "frametime", "1");
          add_to_options(params, "gpu_stats", "1");
          add_to_options(params, "gpu_temp", "1");
