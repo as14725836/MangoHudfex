@@ -52,6 +52,7 @@ inline void applyPreset(overlay_params* params, int preset, bool inherit = false
     params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill]    = false;
     params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = false;
     params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega]    = false;
+    params->enabled[OVERLAY_PARAM_ENABLED_fusion_bar]     = false;
 
     switch (static_cast<FusionSize>(preset - kPresetBase)) {
     case FusionSize::FULL:
@@ -156,6 +157,26 @@ inline void applyPreset(overlay_params* params, int preset, bool inherit = false
         params->enabled[OVERLAY_PARAM_ENABLED_legacy_layout]  = false;
         params->enabled[OVERLAY_PARAM_ENABLED_hud_compact]    = false;
         params->cellpadding_y = 3.0f;
+        break;
+
+    case FusionPreset::BAR:
+        // 横排单行顶栏：所有指标压成一行，配合 position=top-center 贴顶部居中。
+        params->enabled[OVERLAY_PARAM_ENABLED_fusion_bar]     = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_fps]            = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_frame_timing]   = true;   // 行尾折线
+        params->enabled[OVERLAY_PARAM_ENABLED_gpu_stats]      = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_cpu_stats]      = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_gpu_temp]       = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_cpu_temp]       = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_vram]           = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_ram]            = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_battery_watt]   = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_gpu_name]       = false;  // 型号太长，一行放不下
+        params->enabled[OVERLAY_PARAM_ENABLED_time]           = false;
+        params->enabled[OVERLAY_PARAM_ENABLED_engine_version] = true;
+        params->enabled[OVERLAY_PARAM_ENABLED_legacy_layout]  = false;
+        params->enabled[OVERLAY_PARAM_ENABLED_hud_compact]    = true;
+        params->cellpadding_y = 0.0f;
         break;
     }
 

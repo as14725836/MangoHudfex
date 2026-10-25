@@ -97,7 +97,7 @@ constexpr float kMinimalGraphSp  = 150.0f; // Minimal: gw = sp(150f)
 // ============================================================================
 // 五种尺寸 —— FusionHudModels.kt 的 FusionSize
 // ============================================================================
-enum class FusionSize { FULL, TILES, PILL, MINIMAL, MEGA };
+enum class FusionSize { FULL, TILES, PILL, MINIMAL, MEGA, BAR };
 
 /**
  * MangoHud 预设编号基址：FusionHUD 五档占用 preset 10~14
@@ -112,6 +112,7 @@ inline const char* fusionSizeToken(FusionSize s) {
         case FusionSize::PILL:    return "pill";
         case FusionSize::MINIMAL: return "minimal";
         case FusionSize::MEGA:    return "mega";
+        case FusionSize::BAR:     return "bar";
     }
     return "full";
 }
@@ -121,6 +122,7 @@ inline FusionSize fusionSizeFromToken(const std::string& t) {
     if (t == "pill"    || t == "PILL")    return FusionSize::PILL;
     if (t == "minimal" || t == "MINIMAL") return FusionSize::MINIMAL;
     if (t == "mega"    || t == "MEGA")    return FusionSize::MEGA;
+    if (t == "bar"     || t == "BAR")     return FusionSize::BAR;
     return FusionSize::FULL;
 }
 
@@ -150,6 +152,8 @@ inline FusionMetrics fusionMetrics(FusionSize s) {
         case FusionSize::MINIMAL: return {13.0f, 0.32f, 12.0f, 6.0f,  9.0f, 12.0f, 20.0f, 12.0f, 38.0f,  0.0f};
         // Mega:  rowPx=13 unit=0.62 band=11 pad=12 lineGap=4.5 lvGap=8 gutter=16
         case FusionSize::MEGA:    return {13.0f, 0.62f, 12.0f, 4.5f, 8.0f, 12.0f, 20.0f, 12.0f,  0.0f, 11.0f};
+        // Bar:   横排单行顶栏。rowPx=11.5 unit=0.78 pad=9 lineGap=2 lvGap=7
+        case FusionSize::BAR:     return {11.5f, 0.78f,  9.0f, 2.0f, 7.0f, 12.0f, 20.0f, 12.0f,  0.0f,  0.0f};
     }
     return {14.0f, 0.62f, 12.0f, 5.0f, 9.0f, 12.0f, 20.0f, 12.0f, 0.0f, 0.0f};
 }
@@ -435,7 +439,10 @@ inline bool isFusionActive(const overlay_params&) {
  * 想恢复多布局：把下面改成按 enabled[] 判断即可（原实现见 git 历史）。
  */
 inline FusionSize currentFusionSize(const overlay_params& p) {
-    (void)p;
+    // BAR（横排单行顶栏）是唯一可选的第二形态：显式开关 fusion_bar=1 时启用，
+    // 其余情况依旧是 Full 竖排面板 —— 行为与之前完全一致。
+    if (p.enabled[OVERLAY_PARAM_ENABLED_fusion_bar])
+        return FusionSize::BAR;
     return FusionSize::FULL;
 }
 

@@ -826,6 +826,7 @@ set_parameters_from_options(struct overlay_params *params)
       params->enabled[OVERLAY_PARAM_ENABLED_fusion_pill] = false;
       params->enabled[OVERLAY_PARAM_ENABLED_fusion_minimal] = false;
       params->enabled[OVERLAY_PARAM_ENABLED_fusion_mega] = false;
+      params->enabled[OVERLAY_PARAM_ENABLED_fusion_bar] = false;
       params->options.erase("full");
    }
    for (auto& it : params->options) {
@@ -1551,6 +1552,43 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
          // 会被复位冲掉，所以必须再经选项路径应用一次。
          add_to_options(params, "fusion_full", "1");
          params->enabled[OVERLAY_PARAM_ENABLED_fusion_full] = true;
+         break;
+
+      // === FusionHUD BAR —— 横排单行顶栏，贴屏幕顶部水平居中 ===
+      case 15:
+         add_to_options(params, "fps", "1");
+         add_to_options(params, "frame_timing", "1");
+         add_to_options(params, "frametime", "1");
+         add_to_options(params, "gpu_stats", "1");
+         add_to_options(params, "gpu_temp", "1");
+         add_to_options(params, "cpu_stats", "1");
+         add_to_options(params, "cpu_temp", "1");
+         add_to_options(params, "vram", "1");
+         add_to_options(params, "ram", "1");
+         add_to_options(params, "battery", "1");
+         add_to_options(params, "battery_watt", "1");
+         add_to_options(params, "engine_version", "1");
+         add_to_options(params, "gpu_name", "0");
+         add_to_options(params, "time", "0");
+         add_to_options(params, "legacy_layout", "0");
+         add_to_options(params, "hud_compact", "1");
+         add_to_options(params, "hud_no_margin", "0");
+         add_to_options(params, "horizontal", "0");
+         add_to_options(params, "table_columns", "1");
+         // 贴顶部 + 水平居中（position_layer 的 TOP_CENTER 分支已经就位，
+         // 这里只负责把位置选对；面板本身宽度 = 实际内容宽）
+         add_to_options(params, "position", "top-center");
+         // 其余档位一律关闭，避免与 Full 抢同一个渲染路径
+         add_to_options(params, "fusion_full", "0");
+         add_to_options(params, "fusion_tiles", "0");
+         add_to_options(params, "fusion_pill", "0");
+         add_to_options(params, "fusion_minimal", "0");
+         add_to_options(params, "fusion_mega", "0");
+
+         for (const auto& kv : fusionhud::fusionThemeOptions(fusionhud::FusionSize::BAR))
+            add_to_options(params, kv.first, kv.second);
+
+         add_to_options(params, "fusion_bar", "1");
          break;
 
 

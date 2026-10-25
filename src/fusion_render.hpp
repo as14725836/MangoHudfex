@@ -1881,6 +1881,182 @@ struct Options {
     std::string prog_text;
 };
 
+// ----------------------------------------------------------------- BAR -----
+
+/** 段容器复用池：build_bar 每帧构造 N 个 vector<Span>，这里按槽位复用。 */
+inline std::vector<std::vector<Span>>& seg_pool(int slot) {
+    static thread_local std::vector<std::vector<std::vector<Span>>> pool(2);
+    return pool[static_cast<size_t>(slot)];
+}
+
+/**
+ * BAR —— 横排单行顶栏。
+ *
+ * 与其余档位的根本差别：所有指标排成**一行**，段与段之间用竖线分隔，
+ * 帧时间折线横向挂在行尾。面板高度因此只有一行文字高，配合
+ * position=top-center 就得到「屏幕顶部居中」的横条。
+ *
+ * 排版约定：
+ *   - 段落 = 彩色标签 + 空格 + 橙色数值 + 淡灰单位（与 Full 的配色层级一致）
+ *   - 所有字形共用同一条基线，垂直居中的计算只做一次
+ *   - 折线区的上下边缘与文字行居中对齐，不额外撑高面板
+ */
+inline void build_bar(Frame& f, const Snapshot& s, const Chips& c) {
+    const float px = f.M.sp(11.5f);
+    const float unit_px = px * 0.78f;
+    const float pad = f.M.gsp(9.0f);
+    const float seg_gap = f.M.gsp(6.5f);    // 分隔符左右各一份
+    const float graph_gap = f.M.gsp(8.0f);
+    const float gw = f.M.sp(80.0f);         // 折线区宽度
+    const float gh = f.M.sp(13.0f);         // 折线区高度
+
+    std::vector<std::vector<Span>>& segs = seg_pool(0);
+    segs.clear();
+    auto push = [&](std::vector<Span> v) {
+        if (!v.empty())
+            segs.push_back(std::move(v));
+    };
+    // 段内公共前缀：彩色标签 + 一个空格
+    auto lab = [&](const char* t, uint32_t col) {
+        return Span{t, col, px};
+    };
+    auto sp_ = [&]() { return Span{" ", kColUnit, unit_px}; };
+
+    // 1) API / 引擎名（DXVK、VKD3D…）；拿不到时跳过，避免出现无意义的 "FPS"
+    {
+        const std::string api = api_label(s, c);
+        if (c.engine && api != "FPS")
+            push({Span{api, kColFps, px}});
+    }
+
+    // 2) GPU 占用
+    if (c.gpu) {
+        std::vector<Span> v;
+        v.push_back(lab("GPU", kColGpu));
+        v.push_back(sp_());
+        for (const Span& x : num_unit(s.gpu_pct >= 0 ? &s.gpu_pct : nullptr, "%", px, unit_px))
+            v.push_back(x);
+        push(std::move(v));
+    }
+
+    // 3) CPU 占用
+    if (c.cpu) {
+        std::vector<Span> v;
+        v.push_back(lab("CPU", kColCpu));
+        v.push_back(sp_());
+        for (const Span& x : num_unit(s.cpu_pct >= 0 ? &s.cpu_pct : nullptr, "%", px, unit_px))
+            v.push_back(x);
+        push(std::move(v));
+    }
+
+    // 4) VRAM 占用
+    if (c.vram && s.vram_used >= 0.0f) {
+        std::vector<Span> v;
+        v.push_back(lab("VRAM", kColVram));
+        v.push_back(sp_());
+        v.push_back(Span{fmt_f(s.vram_used, 4, 1), kColNum, px});
+        v.push_back(Span{"GiB", kColUnit, unit_px});
+        push(std::move(v));
+    }
+
+    // 5) RAM 占用
+    if (c.ram) {
+        std::vector<Span> v;
+        v.push_back(lab("RAM", kColRam));
+        v.push_back(sp_());
+        for (const Span& x : num_unit(s.ram_pct >= 0 ? &s.ram_pct : nullptr, "%", px, unit_px))
+            v.push_back(x);
+        push(std::move(v));
+    }
+
+    // 6) 功耗
+    if (c.power && s.bat_w > 0.0f) {
+        std::vector<Span> v;
+        v.push_back(lab("PWR", kColBat));
+        v.push_back(sp_());
+        for (const Span& x : num_unit_f(s.bat_w, "W", px, unit_px))
+            v.push_back(x);
+        push(std::move(v));
+    }
+
+    // 7) 温度：优先 CPU，回退 GPU（手机上 CPU 温度更常读得到）
+    {
+        int t = c.cpu_temp ? s.cpu_temp : -1;
+        if (t < 0 && c.gpu_temp)
+            t = s.gpu_temp;
+        if (t >= 0) {
+            std::vector<Span> v;
+            v.push_back(lab("TMP", kColDim));
+            v.push_back(sp_());
+            for (const Span& x : temp_spans(t, px, unit_px))
+                v.push_back(x);
+            push(std::move(v));
+        }
+    }
+
+    // 8) 帧率
+    if (c.fps) {
+        std::vector<Span> v;
+        v.push_back(lab("FPS", kColFps));
+        v.push_back(sp_());
+        for (const Span& x : num_unit_f(s.fps, "FPS", px, unit_px)) {
+            // 行尾的 "FPS" 单位在 BAR 里多余（前面已有 FPS 标签），只留数字
+            if (x.col == kColUnit)
+                continue;
+            v.push_back(x);
+        }
+        push(std::move(v));
+    }
+
+    // 9) win-fg 插帧：真实帧 → 插帧后总帧
+    if (c.win_fg && s.winfg_on && s.winfg_total > 0.0f) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.0f->%.0f", s.winfg_real, s.winfg_total);
+        std::vector<Span> v;
+        v.push_back(lab("FG", 0xFFE5D94D));
+        v.push_back(sp_());
+        v.push_back(Span{buf, 0xFFBFFF66, px});
+        push(std::move(v));
+    }
+
+    // ---- 宽度：段落 + 分隔符 + 折线区 ----
+    const std::string sep = "|";
+    const float sep_w = f.M.measure(sep, unit_px);
+    const bool want_graph = c.fps && c.graph;
+
+    float text_w = 0.0f;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        if (i > 0)
+            text_w += seg_gap * 2.0f + sep_w;
+        text_w += f.M.run_w(segs[i]);
+    }
+
+    const float lh = f.M.line_h(px);
+    const float inner_h = std::max(lh, want_graph ? gh : 0.0f);
+
+    f.content_w = pad + text_w + (want_graph ? graph_gap + gw : 0.0f) + f.M.sp(kRightInsetSp);
+    f.content_h = pad * 2.0f + inner_h;
+
+    // ---- 落字：所有段落共用一条基线 ----
+    const float baseline = pad + (inner_h - lh) * 0.5f + f.M.ascent(px);
+    float x = pad;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        if (i > 0) {
+            f.place(x + seg_gap, baseline, std::vector<Span>{Span{sep, kColUnit, unit_px}});
+            x += seg_gap * 2.0f + sep_w;
+        }
+        x = f.place(x, baseline, segs[i]);
+    }
+
+    // ---- 折线区：行尾，垂直居中 ----
+    if (want_graph) {
+        const float gx = pad + text_w + graph_gap;
+        const float gy = pad + (inner_h - gh) * 0.5f;
+        f.graph = Rect{gx, gy, gx + gw, gy + gh};
+        f.has_graph = true;
+    }
+}
+
 inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, const Options& o) {
     f.glyphs.clear();
     f.tiles.clear();
@@ -1911,6 +2087,7 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
         case FusionSize::PILL:    build_pill(f, s, c); break;
         case FusionSize::MINIMAL: build_minimal(f, s, c); break;
         case FusionSize::MEGA:    build_mega(f, s, c); break;
+        case FusionSize::BAR:     build_bar(f, s, c); break;
     }
 
     // 署名行统一追加（自绘模式不再走表格，custom_text_center 需由这里负责）

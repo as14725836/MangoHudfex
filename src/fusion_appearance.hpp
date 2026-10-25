@@ -351,7 +351,12 @@ inline void applyFusionAppearance(const overlay_params& params) {
     // 内边距按档位收敛（FusionHUD 各档 pad 都是 10sp 起）
     const FusionSize sz = currentFusionSize(params);
     const FusionMetrics m = fusionMetrics(sz);
-    if (sz == FusionSize::PILL || sz == FusionSize::MINIMAL) {
+    if (sz == FusionSize::BAR) {
+        // 横排单行条：上下不留白，否则面板会凭空高出一截
+        s.WindowPadding    = ImVec2(4.0f, 0.0f);
+        s.ItemSpacing      = ImVec2(2.0f, 0.0f);
+        s.ItemInnerSpacing = ImVec2(2.0f, 0.0f);
+    } else if (sz == FusionSize::PILL || sz == FusionSize::MINIMAL) {
         s.WindowPadding    = ImVec2(6.0f, 4.0f);
         s.ItemSpacing      = ImVec2(4.0f, 1.0f);
         s.ItemInnerSpacing = ImVec2(3.0f, 1.0f);
