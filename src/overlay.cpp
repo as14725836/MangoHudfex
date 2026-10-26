@@ -232,10 +232,14 @@ void update_hw_info(const struct overlay_params& params, uint32_t vendorID)
                                 std::chrono::steady_clock::now().time_since_epoch()).count();
          if (now_ms - s_last_probe_ms >= 200) {
             s_last_probe_ms = now_ms;
-            static fusionhud::GpuPaths s_paths = fusionhud::gpuProbePaths();
+            // 复用同一个监视器（不重复 open 文件）；死节点判定在这里同样生效，
+            // 免得"gpu.cpp 报 N/A、这里又把 0 写回去"互相打架。
+            static fusionhud::GpuMonitor s_mono(fusionhud::gpuProbePaths());
             auto& m = gpus->active_gpu()->metrics;
+            // m.load <= 0 才补测：注意 GPU 空闲时 0 是合法值，但若节点已被判定
+            // 为停更（stale），load() 会返回 -1，此处也就不会写入假 0。
             if (m.load <= 0) {
-               int v = fusionhud::readGpuUtilization(s_paths);
+               int v = s_mono.load();
                if (v >= 0) m.load = v;
             }
             if (m.temp <= 0) {
@@ -243,7 +247,7 @@ void update_hw_info(const struct overlay_params& params, uint32_t vendorID)
                if (v >= 0) m.temp = v;
             }
             if (m.CoreClock <= 0) {
-               double v = fusionhud::readGpuFrequency(s_paths);
+               double v = s_mono.freq();
                if (v > 0.0) m.CoreClock = static_cast<int>(v + 0.5);
             }
             if (m.MemClock <= 0) {

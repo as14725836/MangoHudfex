@@ -363,6 +363,15 @@ inline int tempColor(int celsius, int amber, int red) {
 //       现内置到源码，CI 注入逻辑可删除，构建结果可复现。
 //   gpuProbePaths / readGpuUtilization / readGpuTemperature /
 //   readGpuFrequency / detectVram
+//
+// 性能与稳定性（借鉴 moze30/MangoHud 的 Adreno 处理经验）：
+//   - 采样线程原先每 200ms 重新 std::ifstream(path) 打开一次 sysfs，
+//     大量 open/close 在 Android 上有实测开销，且会与 sysfs 的读锁竞争。
+//     这里改为「首次打开、之后 seekg(0) 复用」的持久流（GpuMonitor）。
+//   - 瞬态读失败（sysfs 偶发返回空）不再立刻置 -1 —— 那会让 HUD 在
+//     有效值和 N/A 之间来回跳。改为保留上一个有效值。
+//   - 若某节点长期恒定不变（内核不再维护计数器），判定为「死节点」，
+//     不再把它当作有效数据源，避免显示恒定的假 0%。
 // ================================================================
 struct GpuPaths {
     std::string use;   // GPU 占用率节点（sysfs）
@@ -457,8 +466,145 @@ inline double readGpuFrequency(const GpuPaths& p) {
     } catch (...) { return -1.0; }
 }
 
+/**
+ * 持久化的 GPU 采样器（供后台线程复用，替代每 200ms 重开文件）。
+ *
+ * 为什么需要：
+ *   1) sysfs 每次 open/close 都有实测开销，Android 上尤其明显；
+ *      持有一个 ifstream + seekg(0) 能把这条热路径的 syscall 数降到最低。
+ *   2) sysfs 偶发返回空（内核侧短暂忙碌）时，若立刻把 load 置 -1，
+ *      HUD 会在「有效值」和「N/A」之间反复跳。这里保留上一个有效值。
+ *   3) 部分机型（如骁龙 8 Gen2 / kalama）内核从某个时刻起不再维护
+ *      kgsl 的 busy 计数器 —— 文件能打开、能读到内容，但值恒为 0 且
+ *      永不变化。此时显示 0% 是误导性的。这里通过「连续 N 次完全相同」
+ *      判定为死节点，直接报不可用（-1 → HUD 显示 --）。
+ *
+ * 用法：在采样线程里构造一次，循环调用 sample()。
+ *      非线程安全，设计上只由一个线程使用。
+ */
+class GpuMonitor {
+public:
+    explicit GpuMonitor(const GpuPaths& paths) {
+        use_path_ = paths.use;
+        freq_path_ = paths.freq;
+        if (!use_path_.empty()) use_.open(use_path_);
+        if (!freq_path_.empty()) freq_.open(freq_path_);
+    }
+
+    /** GPU 占用率：0..100；不可用（含死节点）返回 -1 */
+    int load() {
+        if (!use_.is_open())
+            return -1;
+        use_.clear();
+        use_.seekg(0);
+        std::string line;
+        if (!std::getline(use_, line)) {
+            // 瞬态失败：保留上一个有效值，不跳 N/A
+            return has_load_ ? last_load_ : -1;
+        }
+        int v = parseLoadLine(line, use_path_);
+        if (v < 0)
+            return has_load_ ? last_load_ : -1;
+
+        // 死节点检测：值连续 kStaleSamples 次完全不变 → 判定计数器停更。
+        // 只对「读取成功且值合法」的样本计数，避免把瞬态失败算进去。
+        if (has_load_ && v == last_load_) {
+            if (++same_count_ >= kStaleSamples)
+                stale_ = true;
+        } else {
+            same_count_ = 1;
+            // 值发生变化 → 节点是活的，解除死节点判定
+            if (has_load_)
+                stale_ = false;
+        }
+        last_load_ = v;
+        has_load_ = true;
+
+        if (stale_) {
+            // 死节点：明确报不可用，而不是把恒定值当真（避免显示假 0%）
+            return -1;
+        }
+        return v;
+    }
+
+    /** GPU 频率：MHz；不可用返回 -1.0（频率节点通常是活的，不做死节点判定） */
+    double freq() {
+        if (!freq_.is_open())
+            return -1.0;
+        freq_.clear();
+        freq_.seekg(0);
+        std::string line;
+        if (!std::getline(freq_, line))
+            return last_freq_;
+        try {
+            double v = std::stod(line);
+            if (v > 1e7)       v /= 1e6;   // Hz  → MHz
+            else if (v > 1e4)  v /= 1e3;   // KHz → MHz
+            last_freq_ = v;
+            return v;
+        } catch (...) { return last_freq_; }
+    }
+
+    /** 该占用率节点是否已被判定为「内核不再更新」（供日志/调试） */
+    bool stale() const { return stale_; }
+    const std::string& usePath() const { return use_path_; }
+
+private:
+    // 连续多少次"完全相同"才判定死节点。500ms 一次 → 约 5 秒。
+    // 取值理由：真实负载几乎不可能连续 10 个 500ms 都保持同一整数占用率；
+    //           但也不宜过小，否则偶发同值会被误判。
+    static constexpr int kStaleSamples = 10;
+
+    static int parseLoadLine(const std::string& line, const std::string& path) {
+        if (line.empty())
+            return -1;
+        // 格式 1： "<busy> <total>"（KGSL gpubusy / Mali gpuinfo）
+        {
+            std::istringstream is(line);
+            long long busy = 0, total = 0;
+            std::string rest;
+            if ((is >> busy >> total) && total > 0 && !(is >> rest)) {
+                long long v = busy * 100 / total;
+                return (int)std::clamp<long long>(v, 0, 100);
+            }
+        }
+        // 格式 2：单值，可能带 '%' / 0..1 小数 / milli-percent
+        {
+            std::string s = line;
+            while (!s.empty() &&
+                   (std::isspace(static_cast<unsigned char>(s.back())) || s.back() == '%'))
+                s.pop_back();
+            if (s.empty())
+                return -1;
+            try {
+                double d = std::stod(s);
+                if (line.find('%') == std::string::npos && d > 0.0 && d <= 1.0)
+                    d *= 100.0;
+                else if (d > 100.0 && d <= 10000.0)
+                    d /= 100.0;
+                return std::clamp(static_cast<int>(d), 0, 100);
+            } catch (...) { return -1; }
+        }
+        (void)path;
+    }
+
+    std::string use_path_;
+    std::string freq_path_;
+    std::ifstream use_;
+    std::ifstream freq_;
+    int last_load_ = -1;
+    bool has_load_ = false;
+    int same_count_ = 0;
+    bool stale_ = false;
+    double last_freq_ = -1.0;
+};
+
+
 // 温度：0..100 摄氏度，失败返回 -1
-// 优化：缓存命中的 thermal_zone 编号，避免每帧扫 0..59 号 zone（每帧上百次 open）
+// thermal_zone 扫描上限。骁龙 8 Gen2(kalama) 上 zone 总数已超过 80，
+// GPU 的 gpuss-0..7 落在 zone63~zone70；早期实现只扫 0..59 会全部漏掉。
+inline constexpr int kMaxThermalZone = 96;
+// 优化：缓存命中的 thermal_zone 编号，避免每帧扫全部 zone（每帧上百次 open）
 inline int& fhTempZoneCache() { static int z = -1; return z; }
 
 inline int fhReadZoneTemp(int z) {
@@ -501,7 +647,10 @@ inline int readGpuTemperature() {
         fhTempZoneCache() = -1;                   // 缓存失效，重新扫描
     }
     // 2) 扫描 thermal_zone，找 type 含 GPU 关键字的
-    for (int z = 0; z < 60; ++z) {
+    //    上限必须足够大：新平台（如骁龙 8 Gen2 / kalama）的 thermal_zone 总数
+    //    超过 70，GPU 的 gpuss-0 可能落在 zone63~zone70。原先只扫 0..59 会
+    //    直接漏掉，导致温度恒为 N/A。这里放宽到 kMaxThermalZone。
+    for (int z = 0; z < kMaxThermalZone; ++z) {
         if (!fhZoneIsGpu(z)) continue;
         int t = fhReadZoneTemp(z);
         if (t >= 0) { fhTempZoneCache() = z; return t; }

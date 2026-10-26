@@ -134,37 +134,48 @@ GPUS::GPUS(const overlay_params* early_params) {
             available_gpus.emplace_back(adreno);
 
             // 启动后台线程监控 GPU 使用率（跨厂商：Adreno / Mali / PowerVR / amdgpu）
-            std::thread([adreno](){
-                auto gpu_paths = fusionhud::gpuProbePaths();
-                while(true) {
-                    // GPU 使用率
-                    int load = fusionhud::readGpuUtilization(gpu_paths);
-                    adreno->metrics.load = load;
-
+            // 生命周期：线程只持有 weak_ptr，GPU 对象销毁后自动退出。
+            // 原实现捕获 shared_ptr 并 detach()，会让 GPU 对象永远不被释放、
+            // 线程也永不退出（进程内多次初始化时累积泄漏）。
+            std::thread([weak = std::weak_ptr<GPU>(adreno)](){
+                // 持久文件流：只打开一次，之后每轮 seekg(0) 复用，
+                // 避免每 200ms 反复 open/close sysfs（Android 上有实测开销）。
+                fusionhud::GpuMonitor mono(fusionhud::gpuProbePaths());
+                bool logged_stale = false;
+                while (auto gpu = weak.lock()) {
+                    // GPU 使用率（死节点会被判定为 -1，HUD 显示 -- 而不是假 0%）
+                    int load = mono.load();
+                    gpu->metrics.load = load;
+                    if (mono.stale() && !logged_stale) {
+                        logged_stale = true;
+                        SPDLOG_WARN(
+                            "GPU load node \"{}\" is frozen (kernel stopped updating); "
+                            "reporting N/A instead of a constant 0%. "
+                            "Temperature / clock / VRAM are unaffected.",
+                            mono.usePath()
+                        );
+                    }
                     // GPU 温度
                     int temp = fusionhud::readGpuTemperature();
                     if (temp >= 0) {
-                        adreno->metrics.temp = temp;
+                        gpu->metrics.temp = temp;
                     }
-
                     // GPU 频率
-                    double freq = fusionhud::readGpuFrequency(gpu_paths);
+                    double freq = mono.freq();
                     if (freq > 0) {
-                        adreno->metrics.CoreClock = (int)freq;
+                        gpu->metrics.CoreClock = (int)freq;
                     }
 
                     // VRAM
                     // 单位统一成 GiB（HUD 侧按 "%.1f GiB" 显示，FusionHUD 也按 GiB 读取）；
                     // 探测不到写 -1（不可用），避免显示假的 0。
                     auto vram = fusionhud::detectVram();
-                    adreno->metrics.sys_vram_used =
+                    gpu->metrics.sys_vram_used =
                         vram.usedMB >= 0 ? static_cast<float>(vram.usedMB) / 1024.0f : -1.0f;
-
                     // 内存(DDR)频率：kgsl 不提供显存频率，用总线 DCVS 的 DDR 时钟
                     double mem_mhz = fusionhud::readMemClockMHz();
-                    adreno->metrics.MemClock = mem_mhz > 0.0 ? (int)(mem_mhz + 0.5) : 0;
-
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    gpu->metrics.MemClock = mem_mhz > 0.0 ? (int)(mem_mhz + 0.5) : 0;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
             }).detach();
 
