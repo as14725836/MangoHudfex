@@ -175,25 +175,45 @@ inline void squircle_path(std::vector<ImVec2>& out, float x0, float y0, float x1
         }
     }
     const ImVec2* unit = s_arc.unit.data();
+    // 去重压入：相邻两个顶点若落在同一位置，会形成一条零长度边。
+    // ImGui 的 AddConvexPolyFilled 对每条边做法线 (p1-p0)/|p1-p0|，零长度边
+    // 得到 0/0=NaN，该顶点的内/外两个顶点位置相同、抗锯齿 fringe 缺失，
+    // 表现为边缘上出现一个硬切的暗点或暗直线。BAR 用 r=height/2 的真半圆，
+    // 弧顶与上边端点、弧端与上下直边端点极易重合，正是"半圆上方一条黑线"的来源。
+    auto push_pt = [&out](float px, float py) {
+        constexpr float eps = 0.01f;
+        if (!out.empty()) {
+            const ImVec2& b = out.back();
+            if (std::fabs(px - b.x) <= eps && std::fabs(py - b.y) <= eps)
+                return;
+        }
+        out.push_back(ImVec2(px, py));
+    };
     auto arc = [&](float cx, float cy, float sx, float sy, float a0, float a1) {
         // a0/a1 只可能是 0→90 或 90→0，即正用或反用同一张表
         const bool reverse = (a0 > a1);
         for (int i = 0; i <= seg; ++i) {
             const int idx = reverse ? (seg - i) : i;
             const ImVec2& u = unit[idx];
-            out.push_back(ImVec2(cx + sx * r * u.x, cy + sy * r * u.y));
+            push_pt(cx + sx * r * u.x, cy + sy * r * u.y);
         }
     };
-
-    out.push_back(ImVec2(x0 + r, y0));          // 上边左端
-    out.push_back(ImVec2(x1 - r, y0));          // 上边右端
+    push_pt(x0 + r, y0);                        // 上边左端
+    push_pt(x1 - r, y0);                        // 上边右端
     arc(x1 - r, y0 + r, +1.0f, -1.0f, 90.0f, 0.0f);    // 右上角
-    out.push_back(ImVec2(x1, y1 - r));          // 右边下端
+    push_pt(x1, y1 - r);                        // 右边下端
     arc(x1 - r, y1 - r, +1.0f, +1.0f, 0.0f, 90.0f);    // 右下角
-    out.push_back(ImVec2(x0 + r, y1));          // 下边左端
+    push_pt(x0 + r, y1);                        // 下边左端
     arc(x0 + r, y1 - r, -1.0f, +1.0f, 90.0f, 0.0f);    // 左下角
-    out.push_back(ImVec2(x0, y0 + r));          // 左边上端
+    push_pt(x0, y0 + r);                        // 左边上端
     arc(x0 + r, y0 + r, -1.0f, -1.0f, 0.0f, 90.0f);    // 左上角（闭合）
+    // 闭合边同样去重：末点若回到首点，去掉它，闭合边才是一条完整的「上边」。
+    if (out.size() > 1) {
+        const ImVec2& a = out.front();
+        const ImVec2& b = out.back();
+        if (std::fabs(a.x - b.x) <= 0.01f && std::fabs(a.y - b.y) <= 0.01f)
+            out.pop_back();
+    }
 }
 
 /** 名称类文本（GPU 型号 / 驱动名等）的最大宽度（sp）。
@@ -2160,12 +2180,20 @@ inline void build(Frame& f, const Snapshot& s, const Chips& c, FusionSize size, 
  * WindowBorderSize 再收窄一点）。留出够宽的透明带，描边就完整落在裁剪区内。
  */
 inline float panel_margin(const Frame& f, const Options& opt) {
-    // 默认不画描边（fusion_outline=0）：只留 1px，避免抗锯齿边缘被窗口裁剪区切掉。
+    // 外投影在 draw() 里的外扩量：squircle_path(shp, x0 - e, y0 - e*0.5f,
+    // x1 + e, y1 + e, ...)，其中 e = sp(1.4) * 2。水平方向与下方各外扩 e，
+    // 上方外扩 e*0.5。阴影是纯黑半透明（kColShadowNear/Far），一旦被窗口
+    // 裁剪区截断，就不会自然淡出，而是在截断处留下一条硬边深黑色直条 ——
+    // BAR 档的半圆端上方原本没有面板填充，那 1~2px 的阴影残条没有任何东西
+    // 遮挡，看上去就是「半圆上方一条黑线」。
+    // 抗锯齿填充的 fringe 还会再往外铺约 1px，一并算进来。
+    const float shadow_extent = f.M.sp(1.4f) * 2.0f + 1.0f;
+    // 默认不画描边（fusion_outline=0）：仍需覆盖外投影，否则阴影被裁成硬边。
     if (opt.outline <= 0.0f)
-        return 1.0f;
+        return shadow_extent;
     // 有描边时为它预留"线宽 + 4px"的留白，保证四个方向的描边都不被裁。
     const float sw = std::max(1.0f, std::round(f.M.sp(kOutlineMaxSp * opt.outline)));
-    return sw + 4.0f;
+    return std::max(shadow_extent, sw + 4.0f);
 }
 
 /** 发光开关：MANGOHUD_FUSION_GLOW=0 关闭（默认开） */
