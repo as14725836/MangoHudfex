@@ -62,6 +62,7 @@ vklayer_files = files(
   'file_utils.cpp',
   'nvidia.cpp',
   'gpu_fdinfo.cpp',
+  'kgsl_memstore.cpp',
   'amdgpu.cpp',
   'winfg.cpp'
 )

@@ -1,4 +1,5 @@
 #include "gpu_fdinfo.h"
+#include "kgsl_memstore.h"
 #include "string_utils.h"
 
 #ifndef TEST_ONLY
@@ -755,6 +756,12 @@ void GPU_fdinfo::init_kgsl() {
 }
 
 int GPU_fdinfo::get_kgsl_load() {
+    // memstore 优先：sysfs 被冻结时那些节点只会给出常量 0，先问 memstore
+    // 才知道到底有没有真实数据。读不到（-1）再退回 sysfs。
+    int memstore = fhud_kgsl::read_percent();
+    if (memstore >= 0)
+        return memstore;
+
     // 首先尝试 gpu_busy_percentage 文件
     std::ifstream* s = &kgsl_streams["gpu_busy_percentage"];
 
