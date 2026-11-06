@@ -116,7 +116,11 @@ void imgui_create(gl_context *ctx, const gl_wsi plat)
     if (!gladLoadGL())
         spdlog::error("Failed to initialize OpenGL context, crash incoming");
 
-    deviceName = (char*)glGetString(GL_RENDERER);
+    // glGetString 在当前上下文无效时会返回 NULL（Wine + llvmpipe/virgl、
+    // 上下文刚丢失等场景真的会碰到）。直接拿 NULL 构造 std::string 会崩。
+    const GLubyte* renderer_str = glGetString(GL_RENDERER);
+    const GLubyte* vendor_str   = glGetString(GL_VENDOR);
+    deviceName = renderer_str ? (const char*)renderer_str : "unknown";
     // If we're running zink we want to rely on the vulkan loader for the hud instead.
     if (deviceName.find("zink") != std::string::npos)
         return;
@@ -125,7 +129,7 @@ void imgui_create(gl_context *ctx, const gl_wsi plat)
         sw_stats.version_gl.minor,
         sw_stats.version_gl.is_gles);
 
-    std::string vendor = (char*)glGetString(GL_VENDOR);
+    std::string vendor = vendor_str ? (const char*)vendor_str : "unknown";
     SPDLOG_DEBUG("vendor: {}, deviceName: {}", vendor, deviceName);
     sw_stats.deviceName = deviceName;
     // ---- virgl / 虚拟 GPU 识别 ----
@@ -263,13 +267,18 @@ void imgui_render(gl_context *ctx, unsigned int width, unsigned int height)
     // 未必会被呈现到屏幕 → 看起来就是"时不时闪烁"。画完后恢复原来的绑定。
     const bool bind_default_fb = params.enabled[OVERLAY_PARAM_ENABLED_gl_hud_bind_default_fb];
     GLint saved_fbo = 0;
+    bool fbo_saved = false;
     if (bind_default_fb) {
+        // 记录失败（无当前上下文等）时 fbo_saved 保持 false，后面的恢复就不做，
+        // 避得把应用自己的 FBO 绑定搞乱。
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saved_fbo);
+        if (glGetError() == GL_NO_ERROR)
+            fbo_saved = true;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    if (bind_default_fb && saved_fbo != 0)
+    if (bind_default_fb && fbo_saved && saved_fbo != 0)
         glBindFramebuffer(GL_FRAMEBUFFER, saved_fbo);
 
     if (sw_stats.font_params_hash != params.font_params_hash)

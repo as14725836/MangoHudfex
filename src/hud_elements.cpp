@@ -535,7 +535,15 @@ void HudElements::cpu_stats(){
 
 static float get_core_load_stat(void*,int);
 static float get_core_load_stat(void *data, int idx){
-    return ((CPUStats *)data)->GetCPUData().at(idx).percent;
+    // 不要用 .at()：这条路径在 HUD 绘制回调里跑，idx 来自上一轮采样的
+    // 核心数；Android 热插拔 CPU / Wine 下 cgroup 视图变化时可能越界，
+    // out_of_range 会直接逃出绘制回调让进程 terminate。
+    if (!data || idx < 0)
+        return 0.f;
+    const auto& cores = ((CPUStats *)data)->GetCPUData();
+    if (static_cast<size_t>(idx) >= cores.size())
+        return 0.f;
+    return cores[idx].percent;
 }
 
 void HudElements::core_load(){
@@ -1749,8 +1757,11 @@ void HudElements::winesync() {
     if (!winesync_ptr)
         winesync_ptr = std::make_unique<WineSync>();
 
+    // 先给 pid 并完成探测，再看 valid()。旧顺序是反的：valid() 初始取决于
+    // determine_sync_variant()，而它只在 set_pid() 里调用 —— 探测永远跑不到。
+    winesync_ptr->set_pid(HUDElements.g_gamescopePid);
+
     if (winesync_ptr->valid()) {
-        winesync_ptr->set_pid(HUDElements.g_gamescopePid);
         ImGui::PushFont(HUDElements.sw_stats->font_secondary);
         ImguiNextColumnFirstItem();
         HUDElements.TextColored(HUDElements.colors.engine, "%s", "WSYNC");

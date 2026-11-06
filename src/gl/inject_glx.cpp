@@ -40,6 +40,15 @@ static std::mutex global_lock;
 typedef std::lock_guard<std::mutex> scoped_lock;
 static std::unordered_map<void *, gl_context *> gl_contexts;
 
+// 只读查找。不要用 gl_contexts[ctx]：operator[] 会为未知上下文插入
+// 一条空记录，map 只增不减（Wine 下上下文创建/销毁频繁），也会让后面
+// `gl_contexts.size() == 1` 的判断失真。调用方需自行持有 global_lock。
+static gl_context *find_gl_context(void *ctx)
+{
+    auto it = gl_contexts.find(ctx);
+    return it == gl_contexts.end() ? nullptr : it->second;
+}
+
 static void* get_glx_proc_address(const char* name) {
     glx.Load();
 
@@ -74,7 +83,6 @@ bool glx_mesa_queryInteger(int attrib, unsigned int *value)
 static gl_context *create_gl_context(void *ctx)
 {
     gl_context *gl_ctx;
-
     gl_ctx = (gl_context *)calloc(1, sizeof(*gl_ctx));
     gl_ctx->ctx = ctx;
     gl_contexts[ctx] = gl_ctx;
@@ -92,7 +100,7 @@ static void destroy_gl_context(gl_context *gl_ctx)
 EXPORT_C_(void) glXDestroyContext(void *dpy, void *ctx)
 {
     ::scoped_lock lk(global_lock);
-    gl_context *gl_ctx = gl_contexts[ctx];
+    gl_context *gl_ctx = find_gl_context(ctx);
     void *current_ctx, *draw, *read = nullptr;
     int r;
 
@@ -146,7 +154,7 @@ static void do_imgui_swap_impl(void *dpy, void *drawable)
     if (!is_blacklisted()) {
         ::scoped_lock lk(global_lock);
         void *ctx = glx.GetCurrentContext();
-        gl_context *gl_ctx = gl_contexts[ctx];
+        gl_context *gl_ctx = find_gl_context(ctx);
 
         //SPDLOG_TRACE("ctx {}, gl_ctx {}", ctx, (void *)gl_ctx);
         if (!gl_ctx)
@@ -234,11 +242,25 @@ static void do_imgui_swap(void *dpy, void *drawable)
     }
 }
 
+// 异常保护：set_swap_interval 内部会走 imgui_create（分配内存、编译 shader），
+// 虚拟/远程 GL 或 Wine 下失败不应拖垮宿主。
+static void set_swap_interval_impl(void* dpy, void* drawable, int interval);
 static void set_swap_interval(void* dpy, void* drawable, int interval)
+{
+    try {
+        set_swap_interval_impl(dpy, drawable, interval);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("FHUD GL swap-interval hook skipped: {}", e.what());
+    } catch (...) {
+        SPDLOG_ERROR("FHUD GL swap-interval hook skipped");
+    }
+}
+
+static void set_swap_interval_impl(void* dpy, void* drawable, int interval)
 {
     ::scoped_lock lk(global_lock);
     void* ctx = glx.GetCurrentContext();
-    gl_context *gl_ctx = gl_contexts[ctx];
+    gl_context *gl_ctx = find_gl_context(ctx);
 
     if (!is_blacklisted() || interval >= 0)
     {

@@ -34,6 +34,13 @@ static std::mutex global_lock;
 typedef std::lock_guard<std::mutex> scoped_lock;
 static std::unordered_map<void *, gl_context *> gl_contexts;
 
+// 同 inject_glx.cpp：只读查找，不产生空条目。调用方需持有 global_lock。
+static gl_context *find_gl_context(void *ctx)
+{
+    auto it = gl_contexts.find(ctx);
+    return it == gl_contexts.end() ? nullptr : it->second;
+}
+
 EXPORT_C_(void *) eglGetProcAddress(const char* procName);
 
 static void* get_egl_proc_address(const char* name) {
@@ -111,7 +118,7 @@ EXPORT_C_(unsigned int) eglDestroyContext(void* dpy, void* ctx)
 {
     static unsigned int (*pfn_eglDestroyContext)(void* dpy, void* ctx) = nullptr;
     ::scoped_lock lk(global_lock);
-    gl_context *gl_ctx = gl_contexts[ctx];
+    gl_context *gl_ctx = find_gl_context(ctx);
     void *current_ctx, *draw, *read = nullptr;
     int r;
 
@@ -157,7 +164,7 @@ static void mangohud_egl_before_swap(void* dpy, void* surf)
             pfn_eglGetCurrentContext = reinterpret_cast<decltype(pfn_eglGetCurrentContext)>(get_egl_proc_address("eglGetCurrentContext"));
         ::scoped_lock lk(global_lock);
         void* ctx = pfn_eglGetCurrentContext();
-        gl_context *gl_ctx = gl_contexts[ctx];
+        gl_context *gl_ctx = find_gl_context(ctx);
         // 异常保护：虚拟/远程 GPU（virgl 等）下 GL 调用更易失败，丢帧即可，
         // 不能让宿主崩溃（fps_limiter 的开启放在 try 外，保证状态成对）。
         try {
