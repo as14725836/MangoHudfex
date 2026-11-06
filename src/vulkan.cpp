@@ -202,7 +202,11 @@ thread_local ImGuiContext* __MesaImGui;
 static void *find_object_data(uint64_t obj)
 {
    ::scoped_lock lk(global_lock);
-   return vk_object_to_data[obj];
+   // 用 find() 而不是 operator[]：后者在键不存在时会插入一条 (obj, nullptr)，
+   // 让 map 只增不减，并且把「找不到」伪装成「找到空值」。
+   // wine/DXVK 下 handle 生命周期与预期不完全一致时这条路径会被反复触到。
+   auto it = vk_object_to_data.find(obj);
+   return it == vk_object_to_data.end() ? nullptr : it->second;
 }
 
 static void map_object(uint64_t obj, void *data)
@@ -1572,6 +1576,9 @@ static struct overlay_draw *before_present(struct swapchain_data *swapchain_data
 static bool is_present_mode_supported(VkPhysicalDevice device, VkSurfaceKHR surface, VkPresentModeKHR targetPresentMode)
 {
    struct instance_data *instance_data = FIND(struct instance_data, device);
+   // 找不到映射时无法查询，保守地当作“不支持”，调用方会退回默认 present mode。
+   if (!instance_data)
+      return false;
 
    PFN_vkGetPhysicalDeviceSurfacePresentModesKHR fpGetPhysicalDeviceSurfacePresentModesKHR =
       instance_data->pd_vtable.GetPhysicalDeviceSurfacePresentModesKHR;
@@ -1611,6 +1618,9 @@ static VkResult overlay_CreateSwapchainKHR(
    createInfo.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
    struct device_data *device_data = FIND(struct device_data, device);
+   // 设备未被本层接管时直接退回驱动实现，不给尚未初始化的状态做任何假设。
+   if (!device_data)
+      return VK_ERROR_INITIALIZATION_FAILED;
    const auto& params = device_data->instance->params;
 
    std::optional<VkPresentModeKHR> target_present_mode;
@@ -1683,12 +1693,20 @@ static void overlay_DestroySwapchainKHR(
 {
    if (swapchain == VK_NULL_HANDLE) {
       struct device_data *device_data = FIND(struct device_data, device);
-      device_data->vtable.DestroySwapchainKHR(device, swapchain, pAllocator);
+      if (device_data)
+         device_data->vtable.DestroySwapchainKHR(device, swapchain, pAllocator);
       return;
    }
 
    struct swapchain_data *swapchain_data =
       FIND(struct swapchain_data, swapchain);
+   // 不是我们创建的 swapchain（或已被销毁）：透传给驱动，避免空指针。
+   if (!swapchain_data) {
+      struct device_data *device_data = FIND(struct device_data, device);
+      if (device_data)
+         device_data->vtable.DestroySwapchainKHR(device, swapchain, pAllocator);
+      return;
+   }
 
    shutdown_swapchain_data(swapchain_data);
    swapchain_data->device->vtable.DestroySwapchainKHR(device, swapchain, pAllocator);
@@ -1703,6 +1721,10 @@ static VkResult overlay_QueuePresentKHR(
       fps_limiter->limit(true);
 
    struct queue_data *queue_data = FIND(struct queue_data, queue);
+   // 队列未被本层映射时（Wine / DXVK 重建 adapter、或 present 走了意外队列），
+   // 直接调用驱动的 QueuePresentKHR，不要拿空 queue_data 去画 overlay。
+   if (!queue_data)
+      return vkQueuePresentKHR(queue, pPresentInfo);
 
    /* Otherwise we need to add our overlay drawing semaphore to the list of
     * semaphores to wait on. If we don't do that the presented picture might
@@ -1713,6 +1735,10 @@ static VkResult overlay_QueuePresentKHR(
       VkSwapchainKHR swapchain = pPresentInfo->pSwapchains[i];
       struct swapchain_data *swapchain_data =
          FIND(struct swapchain_data, swapchain);
+
+      // 不认识的 swapchain：本帧不叠加 overlay，原样透传。
+      if (!swapchain_data)
+         return vkQueuePresentKHR(queue, pPresentInfo);
 
       uint32_t image_index = pPresentInfo->pImageIndices[i];
 
@@ -1781,6 +1807,11 @@ static VkResult overlay_BeginCommandBuffer(
 {
    struct command_buffer_data *cmd_buffer_data =
       FIND(struct command_buffer_data, commandBuffer);
+   // 命令缓冲未经我们的 AllocateCommandBuffers 登记（部分 Wine/DXVK 路径、
+   // 或映射已被提前清理）：没有可透传的原始函数指针，只能安全放弃本层处理，
+   // 不发查询、不空指针解引用。
+   if (!cmd_buffer_data)
+      return VK_SUCCESS;
    struct device_data *device_data = cmd_buffer_data->device;
 
    /* Otherwise record a begin query as first command. */
@@ -1794,6 +1825,8 @@ static VkResult overlay_EndCommandBuffer(
 {
    struct command_buffer_data *cmd_buffer_data =
       FIND(struct command_buffer_data, commandBuffer);
+   if (!cmd_buffer_data)
+      return VK_SUCCESS;
    struct device_data *device_data = cmd_buffer_data->device;
 
    return device_data->vtable.EndCommandBuffer(commandBuffer);
@@ -1805,6 +1838,8 @@ static VkResult overlay_ResetCommandBuffer(
 {
    struct command_buffer_data *cmd_buffer_data =
       FIND(struct command_buffer_data, commandBuffer);
+   if (!cmd_buffer_data)
+      return VK_SUCCESS;
    struct device_data *device_data = cmd_buffer_data->device;
 
    return device_data->vtable.ResetCommandBuffer(commandBuffer, flags);
@@ -1817,6 +1852,8 @@ static void overlay_CmdExecuteCommands(
 {
    struct command_buffer_data *cmd_buffer_data =
       FIND(struct command_buffer_data, commandBuffer);
+   if (!cmd_buffer_data)
+      return;
    struct device_data *device_data = cmd_buffer_data->device;
 
    device_data->vtable.CmdExecuteCommands(commandBuffer, commandBufferCount, pCommandBuffers);
@@ -1828,6 +1865,8 @@ static VkResult overlay_AllocateCommandBuffers(
    VkCommandBuffer*                   pCommandBuffers)
 {
    struct device_data *device_data = FIND(struct device_data, device);
+   if (!device_data)
+      return VK_ERROR_INITIALIZATION_FAILED;
    VkResult result =
       device_data->vtable.AllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
    if (result != VK_SUCCESS)
@@ -1848,6 +1887,8 @@ static void overlay_FreeCommandBuffers(
    const VkCommandBuffer* pCommandBuffers)
 {
    struct device_data *device_data = FIND(struct device_data, device);
+   if (!device_data)
+      return;
    for (uint32_t i = 0; i < commandBufferCount; i++) {
       struct command_buffer_data *cmd_buffer_data =
          FIND(struct command_buffer_data, pCommandBuffers[i]);
@@ -1870,7 +1911,10 @@ static VkResult overlay_QueueSubmit(
     VkFence                                     fence)
 {
    struct queue_data *queue_data = FIND(struct queue_data, queue);
-   struct device_data *device_data = queue_data->device;
+   struct device_data *device_data = queue_data ? queue_data->device : nullptr;
+   // 同 present 路径：无法解折时透传，避免空指针。
+   if (!device_data)
+      return VK_ERROR_INITIALIZATION_FAILED;
 
    return device_data->vtable.QueueSubmit(queue, submitCount, pSubmits, fence);
 }
@@ -1883,6 +1927,9 @@ static VkResult overlay_CreateDevice(
 {
    struct instance_data *instance_data =
       FIND(struct instance_data, physicalDevice);
+   // 物理设备未映射：拿不到 pd_vtable，无法链式创建。
+   if (!instance_data)
+      return VK_ERROR_INITIALIZATION_FAILED;
    VkLayerDeviceCreateInfo *chain_info =
       get_device_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
 
@@ -1897,9 +1944,14 @@ static VkResult overlay_CreateDevice(
    chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
 
 
-   std::vector<const char*> enabled_extensions(pCreateInfo->ppEnabledExtensionNames,
-                                               pCreateInfo->ppEnabledExtensionNames +
-                                               pCreateInfo->enabledExtensionCount);
+   // ppEnabledExtensionNames 在 enabledExtensionCount == 0 时允许为 NULL，
+   // 直接拿它参与指针算术（NULL + 0）严格来说是 UB，部分驱动/编译器会当真。
+   std::vector<const char*> enabled_extensions;
+   if (pCreateInfo->enabledExtensionCount > 0 && pCreateInfo->ppEnabledExtensionNames) {
+      enabled_extensions.assign(pCreateInfo->ppEnabledExtensionNames,
+                                pCreateInfo->ppEnabledExtensionNames +
+                                pCreateInfo->enabledExtensionCount);
+   }
 
    uint32_t extension_count;
 
@@ -1933,7 +1985,8 @@ static VkResult overlay_CreateDevice(
    }
 
    VkDeviceCreateInfo pCreateInfoPatched = *pCreateInfo;
-   pCreateInfoPatched.ppEnabledExtensionNames = enabled_extensions.data();
+   pCreateInfoPatched.ppEnabledExtensionNames =
+      enabled_extensions.empty() ? nullptr : enabled_extensions.data();
    pCreateInfoPatched.enabledExtensionCount = (uint32_t) enabled_extensions.size();
 
    VkResult result = fpCreateDevice(physicalDevice, &pCreateInfoPatched, pAllocator, pDevice);
@@ -1959,7 +2012,10 @@ static VkResult overlay_CreateDevice(
 
    driverProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
    driverProps.pNext = nullptr;
-   if (can_get_driver_info) {
+   // 只判 api_version 不够：GetPhysicalDeviceProperties2 是 1.1 通过
+   // vkGetInstanceProcAddr 获取的，加载器/驱动未解析时指针为 NULL。
+   // Wine + 部分 32/64 位绕转链上这种情况确实存在，直接调用即跳空。
+   if (can_get_driver_info && instance_data->pd_vtable.GetPhysicalDeviceProperties2) {
       VkPhysicalDeviceProperties2 deviceProps = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &driverProps};
       instance_data->pd_vtable.GetPhysicalDeviceProperties2(device_data->physical_device, &deviceProps);
    }
@@ -1980,6 +2036,8 @@ static void overlay_DestroyDevice(
     const VkAllocationCallbacks*                pAllocator)
 {
    struct device_data *device_data = FIND(struct device_data, device);
+   if (!device_data)
+      return;
    if (!is_blacklisted())
       device_unmap_queues(device_data);
    device_data->vtable.DestroyDevice(device, pAllocator);
@@ -2010,28 +2068,35 @@ static VkResult overlay_CreateInstance(
       global_engine_name = engineName;
    }
    if (!is_blacklisted(true)) {
-      if (engineName == "DXVK" || engineName == "vkd3d") {
+      // Wine 生态里 engineName 不是只有小写两种：DXVK 各版本一直用 "DXVK"，
+      // 但 vkd3d-proton 部分版本会填 "VKD3D" / "vkd3d-proton"，
+      // 而旧代码只做精确比较，识别不到就退化成 VULKAN，HUD 上的 DX 版本一栏
+      // 会变成 "Vulkan"。这里先转小写再匹配。
+      const std::string engineNameLower = to_lower(engineName);
+
+      if (engineNameLower == "dxvk" || engineNameLower.rfind("dxvk", 0) == 0
+          || engineNameLower == "vkd3d" || engineNameLower.rfind("vkd3d", 0) == 0) {
          int engineVer = pCreateInfo->pApplicationInfo->engineVersion;
          engineVersion = to_string(VK_VERSION_MAJOR(engineVer)) + "." + to_string(VK_VERSION_MINOR(engineVer)) + "." + to_string(VK_VERSION_PATCH(engineVer));
       }
 
-      if (engineName == "DXVK")
+      if (engineNameLower.rfind("dxvk", 0) == 0)
          engine = DXVK;
 
-      else if (engineName == "vkd3d")
+      else if (engineNameLower.rfind("vkd3d", 0) == 0)
          engine = VKD3D;
 
-      else if(engineName == "mesa zink") {
+      else if(engineNameLower == "mesa zink" || engineNameLower.rfind("zink", 0) == 0) {
          engine = ZINK;
       }
 
-      else if (engineName == "Damavand")
+      else if (engineNameLower == "damavand")
          engine = DAMAVAND;
 
-      else if (engineName == "Feral3D")
+      else if (engineNameLower == "feral3d")
          engine = FERAL3D;
 
-      else if (engineName == "SDLGPU")
+      else if (engineNameLower == "sdlgpu")
          engine = SDL;
 
       else
@@ -2100,6 +2165,8 @@ static VkResult overlay_CreateSampler(
 	VkSampler*                   pSampler)
 {
    struct device_data *device_data = FIND(struct device_data, device);
+   if (!device_data)
+      return VK_ERROR_INITIALIZATION_FAILED;
    auto params = device_data->instance->params;
 	VkSamplerCreateInfo sampler = *pCreateInfo;
 
@@ -2140,6 +2207,8 @@ static void overlay_DestroyInstance(
     const VkAllocationCallbacks*                pAllocator)
 {
    struct instance_data *instance_data = FIND(struct instance_data, instance);
+   if (!instance_data)
+      return;
    instance_data_map_physical_devices(instance_data, false);
    instance_data->vtable.DestroyInstance(instance, pAllocator);
 #ifdef __linux__
@@ -2262,6 +2331,7 @@ extern "C" PUBLIC VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL overlay_GetDeviceProc
    if (dev == NULL) return NULL;
 
    struct device_data *device_data = FIND(struct device_data, dev);
+   if (!device_data) return NULL;
    if (device_data->vtable.GetDeviceProcAddr == NULL) return NULL;
    return device_data->vtable.GetDeviceProcAddr(dev, funcName);
 }
@@ -2276,6 +2346,7 @@ extern "C" PUBLIC VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL overlay_GetInstancePr
    if (instance == NULL) return NULL;
 
    struct instance_data *instance_data = FIND(struct instance_data, instance);
+   if (!instance_data) return NULL;
    if (instance_data->vtable.GetInstanceProcAddr == NULL) return NULL;
    return instance_data->vtable.GetInstanceProcAddr(instance, funcName);
 }
