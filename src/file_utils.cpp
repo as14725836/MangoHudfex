@@ -120,37 +120,57 @@ std::string get_exe_path()
     return read_symlink(PROCDIR "/self/exe");
 }
 
+std::string read_proc_comm(pid_t pid)
+{
+    std::string path = PROCDIR "/";
+    path += (pid > 0) ? std::to_string(pid) : std::string("self");
+    path += "/comm";
+    return read_line(path);
+}
+
 std::string get_wine_exe_name(bool keep_ext)
 {
     const std::string exe_path = get_exe_path();
-    if (!ends_with(exe_path, "wine-preloader") && !ends_with(exe_path, "wine64-preloader")) {
-        return std::string();
-    }
+    // 上游只认 preloader 名字。Termux + box64 / FEX-Emu 下进程是 box64/fex，
+    // wine 10 的 wow64 模式也不再提供 preloader —— 那样 wine-<name>.conf
+    // 会彻底失效。这里放宽：exe 路径带 wine，或 comm/cmdline 里能看到
+    // 一个 .exe 参数，就当作在 wine 里。
+    const bool preloader_name = ends_with(exe_path, "wine-preloader")
+                             || ends_with(exe_path, "wine64-preloader");
+    const bool looks_like_wine = preloader_name
+                              || to_lower(exe_path).find("wine") != std::string::npos;
 
-    std::string line = read_line(PROCDIR "/self/comm"); // max 16 characters though
+    std::string line = read_line(PROCDIR "/self/comm"); // 内核只保留 15 字符
     if (ends_with(line, ".exe", true))
     {
         auto dot = keep_ext ? std::string::npos : line.find_last_of('.');
         return line.substr(0, dot);
     }
 
+    // comm 被截断时（长 exe 名）退到 cmdline 里找 .exe 参数。
+    if (!looks_like_wine)
+        return std::string();
+
     std::ifstream cmdline(PROCDIR "/self/cmdline");
     // Iterate over arguments (separated by NUL byte).
     while (std::getline(cmdline, line, '\0')) {
-        auto n = std::string::npos;
-        if (!line.empty()
-            && ((n = line.find_last_of("/\\")) != std::string::npos)
-            && n < line.size() - 1) // have at least one character
-        {
-            auto dot = keep_ext ? std::string::npos : line.find_last_of('.');
-            if (dot < n)
-                dot = line.size();
-            return line.substr(n + 1, dot - n - 1);
+        // 只认真正的 .exe 参数，不要拿 wine 自身路径当程序名。
+        if (ends_with(line, ".exe", true)) {
+            auto slash = line.find_last_of("/\\");
+            const std::string base = (slash == std::string::npos) ? line : line.substr(slash + 1);
+            auto dot = keep_ext ? std::string::npos : base.find_last_of('.');
+            return base.substr(0, dot);
         }
-        else if (ends_with(line, ".exe", true))
-        {
-            auto dot = keep_ext ? std::string::npos : line.find_last_of('.');
-            return line.substr(0, dot);
+        // 兼容非 .exe 的 Windows 程序（.bat / 原生 ELF 等）的绝对路径参数：
+        // 但要排除 wine 自己的二进制，否则会把 wine64 当成程序名。
+        if (!preloader_name && !line.empty() && line[0] == '/'
+            && to_lower(line).find("wine") == std::string::npos) {
+            auto slash = line.find_last_of('/');
+            if (slash != std::string::npos && slash + 1 < line.size()) {
+                const std::string base = line.substr(slash + 1);
+                auto dot = keep_ext ? std::string::npos : base.find_last_of('.');
+                return base.substr(0, dot);
+            }
         }
     }
     return std::string();

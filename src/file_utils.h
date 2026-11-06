@@ -23,6 +23,12 @@ std::string read_symlink(const char * link);
 std::string read_symlink(const std::string&& link);
 std::string get_basename(const std::string&& path); //prefix so it doesn't conflict libgen
 std::string get_exe_path();
+/**
+ * 读 /proc/<pid>/comm（pid <= 0 表示本进程）。
+ * 安全版：读不到就返回空串，不抛异常。wine 会把 exe 名写进 comm，
+ * 但内核只保留 15 个字符，所以只能当辅助判断用。
+ */
+std::string read_proc_comm(pid_t pid);
 std::string get_wine_exe_name(bool keep_ext = false);
 std::string get_home_dir();
 std::string get_data_dir();
