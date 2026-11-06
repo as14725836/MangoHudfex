@@ -1621,14 +1621,34 @@ struct pci_bus {
 #ifdef __linux__
 static void parse_proton_version(std::string wineProcess, std::string postfix)
 {
+   // dirname() 会就地修改传入的缓冲区。旧代码把 c_str() 强转成 char* 让它写，
+   // 这在 C++11 之后是 UB（c_str 是 const 的），部分 libstdc++ 实现下会改写
+   // 内部缓冲区 / SSO 字段。这里复制到可写的 vector 再调。
+   std::vector<char> buf(wineProcess.begin(), wineProcess.end());
+   buf.push_back('\0');
+   char *dir = dirname(buf.data());
+   if (!dir)
+      return;
+
    stringstream ss;
-   ss << dirname((char*)wineProcess.c_str()) << postfix;
+   ss << dir << postfix;
    string protonVersion = ss.str();
+   const std::string ver_line = read_line(protonVersion);
+   if (ver_line.empty()) {
+      // 读不到 version 文件：不要把 wineVersion 写成半成品 "Proton "。
+      SPDLOG_DEBUG("proton version file unreadable: {}", protonVersion);
+      return;
+   }
    ss.str(""); ss.clear();
-   ss << read_line(protonVersion);
+   ss << ver_line;
    std::getline(ss, wineVersion, ' '); // skip first number string
    std::getline(ss, wineVersion, ' ');
    trim(wineVersion);
+   if (wineVersion.empty()) {
+      // version 文件格式异于预期（例如只有一行）：不要拼出 "Proton " 这种半成品。
+      SPDLOG_DEBUG("proton version unparsable: {}", ver_line);
+      return;
+   }
    string toReplace = "proton-";
    size_t pos = wineVersion.find(toReplace);
    if (pos != std::string::npos) {
@@ -1766,7 +1786,10 @@ void init_system_info(){
            }
 
            {
-              char *dir = dirname((char*)wineProcess.c_str());
+              // 同上：不要用 c_str() 的 const 缓冲区给 dirname 写。
+              std::vector<char> dircopy(wineProcess.begin(), wineProcess.end());
+              dircopy.push_back('\0');
+              char *dir = dirname(dircopy.data());
               if (dir) {
                  cands.push_back(std::string(dir) + "/wine64");
                  cands.push_back(std::string(dir) + "/wine");
