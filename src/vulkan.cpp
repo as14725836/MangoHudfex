@@ -1722,9 +1722,14 @@ static VkResult overlay_QueuePresentKHR(
 
    struct queue_data *queue_data = FIND(struct queue_data, queue);
    // 队列未被本层映射时（Wine / DXVK 重建 adapter、或 present 走了意外队列），
-   // 直接调用驱动的 QueuePresentKHR，不要拿空 queue_data 去画 overlay。
-   if (!queue_data)
-      return vkQueuePresentKHR(queue, pPresentInfo);
+   // 不要拿空 queue_data 去画 overlay。
+   //
+   // 注意：这里不能用全局 vkQueuePresentKHR() 透传 —— 本层是 LD_PRELOAD 层，
+   // 并不链接 libvulkan，那个符号根本不存在（会直接链接失败），
+   // 而且它正是本层要注册的那个入口。只能通过已知 device 的 dispatch 表走；
+   // 连 device 都反查不到时无法安全透传，报错返回，让调用方看到失败。
+   if (!queue_data || !queue_data->device)
+      return VK_ERROR_INITIALIZATION_FAILED;
 
    /* Otherwise we need to add our overlay drawing semaphore to the list of
     * semaphores to wait on. If we don't do that the presented picture might
@@ -1736,9 +1741,9 @@ static VkResult overlay_QueuePresentKHR(
       struct swapchain_data *swapchain_data =
          FIND(struct swapchain_data, swapchain);
 
-      // 不认识的 swapchain：本帧不叠加 overlay，原样透传。
+      // 不认识的 swapchain：本帧不叠加 overlay，原样透传给驱动。
       if (!swapchain_data)
-         return vkQueuePresentKHR(queue, pPresentInfo);
+         return queue_data->device->vtable.QueuePresentKHR(queue, pPresentInfo);
 
       uint32_t image_index = pPresentInfo->pImageIndices[i];
 
