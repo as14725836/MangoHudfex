@@ -24,6 +24,7 @@
 #include <windows.h>
 #endif
 #include <algorithm>
+#include <cctype>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -2077,7 +2078,15 @@ static VkResult overlay_CreateInstance(
       // 但 vkd3d-proton 部分版本会填 "VKD3D" / "vkd3d-proton"，
       // 而旧代码只做精确比较，识别不到就退化成 VULKAN，HUD 上的 DX 版本一栏
       // 会变成 "Vulkan"。这里先转小写再匹配。
-      const std::string engineNameLower = to_lower(engineName);
+      //
+      // 注意：file_utils 的 to_lower() 只存在于 Linux 构建里（win32 用的是
+      // file_utils_win32.cpp），mingw 链接时会 undefined reference，所以就地实现。
+      auto lower_copy = [](std::string s) {
+         for (auto& c : s)
+            c = (char)std::tolower((unsigned char)c);
+         return s;
+      };
+      const std::string engineNameLower = lower_copy(engineName);
 
       if (engineNameLower == "dxvk" || engineNameLower.rfind("dxvk", 0) == 0
           || engineNameLower == "vkd3d" || engineNameLower.rfind("vkd3d", 0) == 0) {
