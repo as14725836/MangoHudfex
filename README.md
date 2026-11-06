@@ -309,6 +309,33 @@ The priorities of different config files are:
 
 Example: For Overwatch, this would be `wine-Overwatch.conf` (even though the executable you run from Lutris is `Battle.net.exe`, the actual game executable name is `Overwatch.exe`).
 
+> **Termux / FEX-Emu / box64 / wine 10 (wow64) 说明**：上游只按
+> `wine-preloader` / `wine64-preloader` 这两个进程名判定“当前在 wine 里”，
+> 在 Termux 上进程名往往是 `box64` / `fex`，而 wine 10 的 wow64 模式不再提供
+> preloader —— 那样 `wine-*.conf` 会静默失效。本仓库放宽了判定：
+> exe 路径含 `wine`，或 `/proc/self/cmdline` 里能找到一个 `.exe` 参数，
+> 就算作 wine 程序（`.exe` 名过长被内核截断到 15 字符时，会回退到 cmdline）。
+
+### Wine 兼容性相关的修复（fork）
+
+以下问题在上游代码里会直接影响 Wine / Proton / DXVK / vkd3d 场景，本仓库已修：
+
+| 位置 | 问题 | 影响 |
+|---|---|---|
+| `winesync` 元素 | `pid` 成员未初始化；首次比较依赖栈垃圾值 | `winesync` 行随机不显示 / 探测到错误进程 |
+| `winesync` 元素 | 探测只在 `valid()` 为真时触发，而 `valid()` 初始取决于探测结果 | 该行永远不显示 |
+| `winesync` 元素 | 用 `unordered_map` 迭代，命中顺序随机 | ntsync/fsync/esync 同时存在时报错项 |
+| `wine-<name>.conf` | 只认 preloader 进程名 | Termux/FEX/wow64 下按程序名配置失效 |
+| `wine`/`Proton` 版本解析 | `dirname()` 就地改写 `c_str()` 的 const 缓冲区 | UB，可能损坏 `std::string` |
+| 引擎识别 | 只精确匹配 `"DXVK"` / `"vkd3d"` | 部分 vkd3d-proton 版本被当成 `Vulkan`，`dx_api` 显示错乱 |
+| Vulkan 层 | `find_object_data()` 用 `operator[]`，键不存在时插入空条目；各 hook 未判空 | wine 下 handle 生命周期异常时空指针崩溃 |
+| Vulkan 层 | `GetPhysicalDeviceProperties2` 调用前只判 API 版本、不判函数指针 | 部分加载器/驱动组合直接跳空 |
+| Vulkan 层 | `ppEnabledExtensionNames` 在扩展数为 0 时为 NULL 却参与指针运算 | UB（wine 下存在 0 扩展的路径） |
+| OpenGL 层 | `glGetString()` 返回值直接构造 `std::string` | 上下文丢失/虚拟 GPU 下空指针崩溃 |
+| OpenGL 层 | `gl_contexts[ctx]` 用 `operator[]` 读取 | map 只增不减，`size()==1` 判断失真 |
+| 绘制回调 | 每核占用 `.at(idx)` 越界 | CPU 热插拔/视图变化时异常逃出绘制回调 → terminate |
+| sysfs/proc 遍历 | 多处 `directory_iterator` 无 `error_code` | Android 沙箱下抛 `filesystem_error` 崩溃 |
+
 If you start the game from the terminal with MangoHud enabled (for example by starting Lutris from the terminal), MangoHud will print the config file names it is looking for.
 
 You can find an example config in /usr/share/doc/mangohud
