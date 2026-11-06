@@ -28,7 +28,12 @@ void GPU_fdinfo::find_fd()
     std::set<std::string> client_ids;
     int total = 0;
 
-    for (const auto& entry : fs::directory_iterator(path)) {
+    // error_code 重载：/proc/<pid>/fd 在沙箱/受限进程下可能不可读，
+    // 无 ec 版本会抛 filesystem_error 崩掉宿主（历史上发生过）。
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(path, ec)) {
+        if (ec)
+            break;
         auto fd_path = entry.path().string();
         auto file = std::ifstream(fd_path);
 
@@ -191,7 +196,10 @@ void GPU_fdinfo::find_hwmon_sensors()
 
     SPDLOG_DEBUG("hwmon: checking \"{}\" directory", hwmon);
 
-    for (const auto &entry : fs::directory_iterator(hwmon)) {
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(hwmon, ec)) {
+        if (ec)
+            break;
         auto filename = entry.path().filename().string();
 
         for (auto& hs : hwmon_sensors) {
@@ -245,7 +253,13 @@ std::string GPU_fdinfo::find_hwmon_dir() {
         return "";
     }
 
-    auto dir_iterator = fs::directory_iterator(d);
+    std::error_code ec;
+    auto dir_iterator = fs::directory_iterator(d, ec);
+    // 目录为空或不可读时 *dir_iterator 会解引用 end()，必须先判 ec/空。
+    if (ec || dir_iterator == fs::directory_iterator()) {
+        SPDLOG_DEBUG("hwmon: unable to iterate \"{}\"", d);
+        return "";
+    }
     auto hwmon = dir_iterator->path().string();
 
     if (hwmon.empty()) {
@@ -262,7 +276,10 @@ std::string GPU_fdinfo::find_hwmon_sensor_dir(std::string name) {
     if (!fs::exists(d))
         return "";
 
-    for (const auto &entry : fs::directory_iterator(d)) {
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(d, ec)) {
+        if (ec)
+            break;
         auto hwmon_dir = entry.path().string();
         auto hwmon_name = hwmon_dir + "/name";
 
@@ -405,7 +422,10 @@ void GPU_fdinfo::find_i915_gt_dir()
     std::string device = "/sys/bus/pci/devices/" + pci_dev + "/drm";
 
     // Find first dir which starts with name "card"
-    for (const auto& entry : fs::directory_iterator(device)) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(device, ec)) {
+        if (ec)
+            break;
         auto path = entry.path().string();
 
         if (path.substr(device.size() + 1, 4) == "card") {
@@ -458,7 +478,10 @@ void GPU_fdinfo::find_xe_gt_dir()
     bool has_rcs = true;
 
     // Check every "gt" dir if it has "engines/rcs" inside
-    for (const auto& entry : fs::directory_iterator(device)) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(device, ec)) {
+        if (ec)
+            break;
         auto path = entry.path().string();
 
         if (path.substr(device.size() + 1, 2) != "gt")
@@ -830,7 +853,10 @@ int GPU_fdinfo::get_kgsl_temp() {
         std::string sysfs_thermal = "/sys/class/thermal/";
 
         if (fs::exists(sysfs_thermal)) {
-            for (const auto& entry : fs::directory_iterator(sysfs_thermal)) {
+            std::error_code ec;
+            for (const auto& entry : fs::directory_iterator(sysfs_thermal, ec)) {
+                if (ec)
+                    break;
                 std::string filename = entry.path().filename().string();
                 if (filename.substr(0, 12) != "thermal_zone")
                     continue;

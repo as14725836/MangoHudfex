@@ -6,7 +6,11 @@ Net::Net() {
     should_reset = false;
     fs::path net_dir(NETDIR);
     if (fs::exists(net_dir) && fs::is_directory(net_dir)) {
-        for (const auto& entry : fs::directory_iterator(net_dir)) {
+        // 同上：沙箱/受限网络命名空间下迭代可能失败，不能让它抛异常。
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(net_dir, ec)) {
+            if (ec)
+                break;
             if (fs::is_directory(entry.status())) {
                 auto val = entry.path().filename().string();
                 if (val == "lo")

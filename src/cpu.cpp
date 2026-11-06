@@ -723,7 +723,12 @@ static void check_thermal_zones(std::string& path, std::string& input) {
     if (!fs::exists(sysfs_thermal))
         return;
 
-    for (auto& d : fs::directory_iterator(sysfs_thermal)) {
+    // error_code 重载：Android 沙箱下目录可能「存在但不可读」，
+    // 无 ec 的 directory_iterator 会抛 filesystem_error 直接把进程带走。
+    std::error_code ec;
+    for (auto& d : fs::directory_iterator(sysfs_thermal, ec)) {
+        if (ec)
+            break;
         if (d.path().filename().string().substr(0, 12) != "thermal_zone")
             continue;
 
